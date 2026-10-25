@@ -44,6 +44,28 @@ What this says:
   `0.711` (Hit@1 `0.947`) while keeping `1.000` Hit@1 and `0.853` P@10 on English noun and title queries, where caption
   matches help (`Brooklyn Bridge`). Pure `picture` mode remains higher (`0.789` P@10) when queries are full sentences.
 
+The table above is exact search over the NumPy vectors (`STORE_BACKEND=memory`), with BM25 over title, photographer and
+date. Through Typesense, caption matching also covers the Met subject tags, which are the evaluation's labels, so its
+caption and hybrid scores are not comparable and are not reported here.
+
+## Typesense search width (`VECTOR_SEARCH_EF`)
+
+Typesense finds nearest vectors with an HNSW graph, and its default search width (`ef`) is 10. With that default,
+`plane` did not return an uploaded photograph of an airliner and `bumblebee` did not return an uploaded picture of the
+Transformers robot, although exact search over the same vectors ranks each first (0.691 and 0.732 cosine, against
+0.635 and 0.622 for the best archive photographs). Both uploads are modern colour pictures unlike any of the
+19th-century prints, so they sit at the edge of the graph and a narrow search never reaches them. `airplane` and `bee`
+happened to reach them. The model and the stored vectors were right: the query prefix and image handling match the
+model card, and re-embedding the stored uploads gives the same vectors.
+
+`VECTOR_SEARCH_EF=200` is now passed in every vector query. Both queries return their upload first, and on the 57
+evaluation queries Typesense's picture-mode top 10 shares 0.975 of its photographs with exact search (0.960 at the
+default). The rest are near-ties: the stored vectors have lengths of 0.998 to 1.004, and Typesense normalises them
+before the cosine while NumPy does not. Subject precision barely moves (picture P@10 0.826 at the default, 0.818 at
+200) because a missed dog photograph is usually replaced by another dog photograph, which is why the evaluation now
+also reports the agreement with exact search (`picture_mode_against_exact_search` in
+`results/eval_search_typesense.json`).
+
 ## Run
 
 ```powershell
@@ -76,8 +98,9 @@ unreachable.
 ## Checks
 
 `ruff check . && ruff format --check . && mypy && pytest -q` (18 tests with a deterministic 3D fake embedder, no GPU or
-network). Run `python scripts/eval_search.py` with `PYTHONPATH=src` after `scripts/build_index.py` to reproduce
-`results/eval_search.json`.
+network). Run `python scripts/eval_search.py` with `PYTHONPATH=src` after `scripts/build_index.py`. It searches
+through the configured `STORE_BACKEND` and writes `results/eval_search_typesense.json` or
+`results/eval_search_memory.json`.
 
 ## Known limits
 

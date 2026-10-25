@@ -52,6 +52,12 @@ def format_vector(vector: np.ndarray) -> str:
     return ",".join(f"{float(value):.6f}" for value in vector)
 
 
+def vector_query(vector_text: str, k: int, ef: int, alpha: float | None = None) -> str:
+    """Typesense's vector_query. `vector_text` is the formatted vector, or empty with `id:` to search by a document."""
+    hybrid_weight = "" if alpha is None else f", alpha:{alpha}"
+    return f"embedding:({vector_text}, k:{k}{hybrid_weight}, ef:{ef})"
+
+
 def document_from_photograph(photograph: Photograph, vector: np.ndarray) -> dict[str, Any]:
     payload = photograph.model_dump()
     payload["embedding"] = [float(value) for value in vector]
@@ -73,8 +79,16 @@ def hit_from_typesense(raw: dict[str, Any], mode: Mode, caption_ids: set[str]) -
 
 
 class TypesensePhotographStore:
-    def __init__(self, url: str, api_key: str, collection_name: str, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        url: str,
+        api_key: str,
+        collection_name: str,
+        search_ef: int,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
         self._collection = collection_name
+        self._search_ef = search_ef
         self._owns_client = client is None
         self._http = client or httpx.AsyncClient(
             base_url=url.rstrip("/"),
@@ -176,13 +190,13 @@ class TypesensePhotographStore:
             params |= {"q": query, "query_by": TEXT_FIELDS}
         elif mode == "picture":
             assert vector is not None
-            params |= {"q": "*", "vector_query": f"embedding:([{format_vector(vector)}], k:{limit})"}
+            params |= {"q": "*", "vector_query": vector_query(f"[{format_vector(vector)}]", limit, self._search_ef)}
         else:
             assert vector is not None
             params |= {
                 "q": query,
                 "query_by": TEXT_FIELDS,
-                "vector_query": f"embedding:([{format_vector(vector)}], k:{max(limit, 50)}, alpha:{alpha})",
+                "vector_query": vector_query(f"[{format_vector(vector)}]", max(limit, 50), self._search_ef, alpha),
             }
         if clause := origin_clause(origin):
             params["filter_by"] = clause
@@ -196,7 +210,7 @@ class TypesensePhotographStore:
         params: dict[str, Any] = {
             "collection": self._collection,
             "q": "*",
-            "vector_query": f"embedding:([{format_vector(vector)}], k:{limit})",
+            "vector_query": vector_query(f"[{format_vector(vector)}]", limit, self._search_ef),
             "per_page": limit,
             "exclude_fields": "embedding",
         }
@@ -225,7 +239,7 @@ class TypesensePhotographStore:
         params: dict[str, Any] = {
             "collection": self._collection,
             "q": "*",
-            "vector_query": f"embedding:([], id: {photograph_id}, k: {limit})",
+            "vector_query": vector_query(f"[], id: {photograph_id}", limit, self._search_ef),
             "per_page": limit,
             "exclude_fields": "embedding",
         }

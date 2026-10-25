@@ -187,11 +187,14 @@ async def test_typesense_store_builds_pure_vector_and_neighbour_queries() -> Non
         return httpx.Response(404)
 
     mock_http = httpx.AsyncClient(base_url="http://typesense.local", transport=httpx.MockTransport(handler))
-    store = TypesensePhotographStore("http://typesense.local", "key", "lens_photographs", client=mock_http)
+    store = TypesensePhotographStore(
+        "http://typesense.local", "key", "lens_photographs", search_ef=200, client=mock_http
+    )
     hits = await store.search_text("anjing", DOG, "picture", 0.8, 5, "upload", set())
     assert len(hits) == 1
     assert hits[0].score == 0.92
     assert seen_bodies[0]["searches"][0]["q"] == "*"
+    assert seen_bodies[0]["searches"][0]["vector_query"].endswith("k:5, ef:200)")
     assert seen_bodies[0]["searches"][0]["filter_by"] == "origin:=`upload`"
 
     title, neighbours = await store.similar("1", 4)

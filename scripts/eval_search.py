@@ -3,6 +3,7 @@
 A photograph is relevant to a query when The Met tagged it with the query's subject. Tags are not complete (a street
 scene with a horse is not always tagged Horses), so every mode is scored against the same incomplete labels.
 Also measures picture-to-picture search: how many of a photograph's five nearest share one of its subjects.
+The search runs through the store the service uses (STORE_BACKEND): typesense is what the app serves, memory is exact.
 Run from the repository root after scripts/build_index.py: python scripts/eval_search.py
 """
 
@@ -14,14 +15,13 @@ from typing import get_args
 import pandas as pd
 
 from app.core.config import get_settings
-from app.search.collection import load_collection
-from app.search.embedder import GemmaEmbedder
+from app.core.resources import build_resources
 from app.search.keyword import KeywordIndex
 from app.search.service import Lens, Mode
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 QUERIES = REPOSITORY / "data" / "eval_queries.jsonl"
-RESULTS = REPOSITORY / "results" / "eval_search.json"
+RESULTS = REPOSITORY / "results"
 CUTOFF = 10
 NEIGHBOURS = 5
 # A subject with fewer photographs than this cannot fill a top ten fairly, so its queries are left out
@@ -30,10 +30,13 @@ MIN_PHOTOGRAPHS = 5
 
 async def main() -> None:
     settings = get_settings()
-    collection = load_collection(settings.collection_dir, settings.embedding_model)
-    lens = Lens(
+    resources = await build_resources(settings)
+    lens = resources.lens
+    collection = lens.collection
+    # Exact search over the same vectors: what the store's approximate index (HNSW) should return
+    exact_lens = Lens(
         collection=collection,
-        embedder=GemmaEmbedder(settings.embedding_model, settings.device),
+        embedder=lens.embedder,
         keyword=KeywordIndex(collection.photographs),
         fusion_k=settings.fusion_k,
         picture_weight=settings.picture_weight,
@@ -48,6 +51,7 @@ async def main() -> None:
     await lens.search_text("warm-up", "picture", 1)  # first call compiles kernels, outside the timing
 
     rows = []
+    exact_agreement = []
     for query in queries.itertuples():  # one query at a time on one GPU, so each timing is a single request's
         for mode in get_args(Mode):
             result = await lens.search_text(query.query, mode, CUTOFF)
@@ -63,7 +67,16 @@ async def main() -> None:
                     "ms": result.took_ms,
                 }
             )
+        served_ids = [hit.photograph.id for hit in (await lens.search_text(query.query, "picture", CUTOFF)).hits]
+        exact_ids = [hit.photograph.id for hit in (await exact_lens.search_text(query.query, "picture", CUTOFF)).hits]
+        exact_agreement.append(
+            {
+                "top_10_shared_with_exact": len(set(served_ids) & set(exact_ids)) / CUTOFF,
+                "top_1_same_as_exact": float(served_ids[:1] == exact_ids[:1]),
+            }
+        )
     scores = pd.DataFrame(rows)
+    agreement = pd.DataFrame(exact_agreement).mean().round(3)
     table = (
         scores.groupby(["mode", "style"])[["precision_at_10", "hit_at_1", "reciprocal_rank"]].mean().round(3).unstack()
     )
@@ -85,7 +98,10 @@ async def main() -> None:
         lambda subject: sum(subject in photograph.tags for photograph in collection.photographs)
     ).to_series().mean() / len(collection.photographs)
 
-    print(f"{len(collection.photographs)} photographs, {len(queries)} queries, {settings.embedding_model}\n")
+    print(f"{len(collection.photographs)} photographs, {len(queries)} queries, {settings.embedding_model}")
+    print(f"Searched through {lens.vector_store_name}\n")
+    print("Picture mode against exact search over the same vectors:")
+    print(agreement.to_string() + "\n")
     print("Mean over queries, by mode and query style:")
     print(table.to_string())
     print("\nOverall (ms is the median time per query):")
@@ -93,13 +109,15 @@ async def main() -> None:
     print(f"\nA random photograph has a query's subject {base_rate:.3f} of the time (precision of a random ranking).")
     print(f"Picture to picture: {pd.Series(shared).mean():.3f} of the {NEIGHBOURS} nearest share a subject.")
 
-    RESULTS.parent.mkdir(exist_ok=True)
-    RESULTS.write_text(
+    RESULTS.mkdir(exist_ok=True)
+    (RESULTS / f"eval_search_{settings.store_backend}.json").write_text(
         json.dumps(
             {
                 "photographs": len(collection.photographs),
                 "queries": len(queries),
                 "model": settings.embedding_model,
+                "store": lens.vector_store_name,
+                "picture_mode_against_exact_search": agreement.to_dict(),
                 "by_mode_and_style": {
                     f"{mode}/{style}": values
                     for (mode, style), values in scores.groupby(["mode", "style"])[

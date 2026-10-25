@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     typesense_url: str = "http://localhost:8108"
     typesense_api_key: SecretStr = SecretStr("lens-local-typesense")
     typesense_collection: str = "lens_photographs"
+    # HNSW search width. Typesense defaults to 10, which skipped the best match for "plane" and "bumblebee".
+    # 200 matches exact search on this collection. Keep it at least the largest k (50 in hybrid mode).
+    vector_search_ef: int = Field(default=200, gt=0)
 
     # The collection: images/, collection.jsonl, uploads.jsonl, and the vector files
     collection_dir: Path = Path("../../assets/lens")

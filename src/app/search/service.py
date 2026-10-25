@@ -114,6 +114,10 @@ class Lens:
         return self.collection.model
 
     @property
+    def embedder(self) -> Embedder:
+        return self._embedder
+
+    @property
     def vector_store_name(self) -> str:
         return "Typesense 27.1" if self._store is not None else "in-memory"
 

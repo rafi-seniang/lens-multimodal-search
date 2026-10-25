@@ -37,6 +37,7 @@ async def build_resources(settings: Settings) -> Resources:
             url=settings.typesense_url,
             api_key=settings.typesense_api_key.get_secret_value(),
             collection_name=settings.typesense_collection,
+            search_ef=settings.vector_search_ef,
         )
         await store.bootstrap(collection.photographs, collection.vectors)
     lens = Lens(
