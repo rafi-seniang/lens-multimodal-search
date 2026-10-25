@@ -11,8 +11,8 @@ from PIL import Image
 
 from app.core.config import get_settings
 from app.core.resources import load_secrets
-from app.search.collection import read_photographs, write_index
-from app.search.embedder import GemmaEmbedder
+from app.engines.embedder import GemmaEmbedder
+from app.repositories.collection import read_photographs, write_index
 
 
 def main() -> None:

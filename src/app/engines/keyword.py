@@ -3,7 +3,7 @@
 import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer
 
-from app.search.collection import Photograph
+from app.schemas.photographs import Photograph
 
 TERM_SATURATION = 1.2  # BM25 k1
 LENGTH_NORMALISATION = 0.75  # BM25 b

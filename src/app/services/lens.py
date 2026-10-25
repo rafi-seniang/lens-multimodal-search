@@ -1,23 +1,18 @@
 """Lens: semantic and hybrid photograph search backed by Typesense (or numpy in tests) plus image ingestion."""
 
 import asyncio
-import datetime as dt
 import time
-import uuid
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
 from PIL import Image
 
 from app.core.errors import InvalidAction, NotFound
-from app.schemas import Hit, IngestResult, SearchResult
-from app.search.collection import Collection, Photograph, save_uploads
-from app.search.embedder import Embedder
-from app.search.keyword import KeywordIndex
-from app.search.typesense_store import OriginFilter, TypesensePhotographStore
-
-Mode = Literal["hybrid", "picture", "caption"]
+from app.engines.embedder import Embedder
+from app.engines.keyword import KeywordIndex
+from app.repositories.collection import Collection, remove_uploaded_file, save_uploads, write_uploaded_files
+from app.repositories.typesense_store import TypesensePhotographStore
+from app.schemas.search import Hit, IngestResult, Mode, OriginFilter, SearchResult
 
 
 def top_positions(scores: np.ndarray, limit: int) -> np.ndarray:
@@ -35,58 +30,6 @@ def ranks(scores: np.ndarray) -> np.ndarray:
     positions = np.empty_like(order)
     positions[order] = np.arange(1, len(scores) + 1)
     return positions
-
-
-def upload_title(custom_title: str | None, stem: str, index: int, batch_count: int) -> str:
-    if not custom_title:
-        return stem
-    if batch_count == 1:
-        return custom_title
-    return f"{custom_title} ({index + 1})"
-
-
-def write_uploaded_files(
-    directory: Path,
-    items: list[tuple[str, Image.Image]],
-    custom_title: str | None,
-    tags: list[str],
-) -> list[Photograph]:
-    uploads_dir = directory / "images" / "uploads"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    today = dt.datetime.now(tz=dt.UTC).strftime("%Y-%m-%d")
-    base_timestamp = int(time.time() * 1000)
-    added: list[Photograph] = []
-    for index, (filename, image) in enumerate(items):
-        photo_id = f"up-{uuid.uuid4().hex[:10]}"
-        relative_path = f"uploads/{photo_id}.webp"
-        image.save(directory / "images" / relative_path, format="WEBP", quality=88)
-        stem = Path(filename).stem.strip() or photo_id
-        resolved_title = upload_title(custom_title, stem, index, len(items))
-        added.append(
-            Photograph(
-                id=photo_id,
-                title=resolved_title,
-                artist="Local upload",
-                date=today,
-                medium="Uploaded picture",
-                tags=tags or ["Untagged"],
-                image=relative_path,
-                width=image.width,
-                height=image.height,
-                source_url="",
-                licence="Local upload",
-                origin="upload",
-                created_at=base_timestamp + index,
-            )
-        )
-    return added
-
-
-def remove_uploaded_file(directory: Path, relative_image: str) -> None:
-    target = (directory / "images" / relative_image).resolve()
-    images_root = (directory / "images" / "uploads").resolve()
-    if target.is_relative_to(images_root):
-        target.unlink(missing_ok=True)
 
 
 class Lens:

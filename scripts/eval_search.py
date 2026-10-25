@@ -16,8 +16,9 @@ import pandas as pd
 
 from app.core.config import get_settings
 from app.core.resources import build_resources
-from app.search.keyword import KeywordIndex
-from app.search.service import Lens, Mode
+from app.engines.keyword import KeywordIndex
+from app.schemas.search import Mode
+from app.services.lens import Lens
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 QUERIES = REPOSITORY / "data" / "eval_queries.jsonl"

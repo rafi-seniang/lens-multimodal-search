@@ -1,17 +1,14 @@
 """Typesense vector store over its REST API. Embeddings are computed on the GPU and stored in Typesense."""
 
 import json
-from typing import Any, Literal
+from typing import Any
 
 import httpx
 import numpy as np
 
 from app.core.errors import NotFound, StoreUnavailable
-from app.schemas import Hit
-from app.search.collection import Photograph
-
-Mode = Literal["hybrid", "picture", "caption"]
-OriginFilter = Literal["all", "upload", "met"]
+from app.schemas.photographs import Photograph
+from app.schemas.search import Hit, Mode, OriginFilter
 
 TEXT_FIELDS = "title,artist,date,tags"
 IMPORT_BATCH_SIZE = 100

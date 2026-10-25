@@ -1,36 +1,22 @@
 """The collection: Met CC0 photographs plus user-uploaded pictures and their precomputed image vectors."""
 
+import datetime as dt
 import json
+import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
-from pydantic import BaseModel
+from PIL import Image
+
+from app.schemas.photographs import Photograph
 
 COLLECTION_FILE = "collection.jsonl"
 VECTORS_FILE = "vectors.npy"
 INDEX_FILE = "index.json"
 UPLOADS_FILE = "uploads.jsonl"
 UPLOAD_VECTORS_FILE = "upload_vectors.npy"
-
-Origin = Literal["met", "upload"]
-
-
-class Photograph(BaseModel):
-    id: str
-    title: str
-    artist: str
-    date: str
-    medium: str
-    tags: list[str]
-    image: str
-    width: int
-    height: int
-    source_url: str
-    licence: str
-    origin: Origin = "met"
-    created_at: int = 0
 
 
 @dataclass
@@ -124,3 +110,55 @@ def write_index(directory: Path, model: str, photographs: list[Photograph], vect
     np.save(directory / VECTORS_FILE, vectors.astype(np.float32))
     index = {"model": model, "dimensions": int(vectors.shape[1]), "ids": [photograph.id for photograph in photographs]}
     (directory / INDEX_FILE).write_text(json.dumps(index), encoding="utf-8")
+
+
+def upload_title(custom_title: str | None, stem: str, index: int, batch_count: int) -> str:
+    if not custom_title:
+        return stem
+    if batch_count == 1:
+        return custom_title
+    return f"{custom_title} ({index + 1})"
+
+
+def write_uploaded_files(
+    directory: Path,
+    items: list[tuple[str, Image.Image]],
+    custom_title: str | None,
+    tags: list[str],
+) -> list[Photograph]:
+    uploads_dir = directory / "images" / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    today = dt.datetime.now(tz=dt.UTC).strftime("%Y-%m-%d")
+    base_timestamp = int(time.time() * 1000)
+    added: list[Photograph] = []
+    for index, (filename, image) in enumerate(items):
+        photo_id = f"up-{uuid.uuid4().hex[:10]}"
+        relative_path = f"uploads/{photo_id}.webp"
+        image.save(directory / "images" / relative_path, format="WEBP", quality=88)
+        stem = Path(filename).stem.strip() or photo_id
+        resolved_title = upload_title(custom_title, stem, index, len(items))
+        added.append(
+            Photograph(
+                id=photo_id,
+                title=resolved_title,
+                artist="Local upload",
+                date=today,
+                medium="Uploaded picture",
+                tags=tags or ["Untagged"],
+                image=relative_path,
+                width=image.width,
+                height=image.height,
+                source_url="",
+                licence="Local upload",
+                origin="upload",
+                created_at=base_timestamp + index,
+            )
+        )
+    return added
+
+
+def remove_uploaded_file(directory: Path, relative_image: str) -> None:
+    target = (directory / "images" / relative_image).resolve()
+    images_root = (directory / "images" / "uploads").resolve()
+    if target.is_relative_to(images_root):
+        target.unlink(missing_ok=True)

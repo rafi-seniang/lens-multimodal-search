@@ -8,11 +8,11 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 
 from app.core.config import Settings
-from app.search.collection import load_collection
-from app.search.embedder import GemmaEmbedder
-from app.search.keyword import KeywordIndex
-from app.search.service import Lens
-from app.search.typesense_store import TypesensePhotographStore
+from app.engines.embedder import GemmaEmbedder
+from app.engines.keyword import KeywordIndex
+from app.repositories.collection import load_collection
+from app.repositories.typesense_store import TypesensePhotographStore
+from app.services.lens import Lens
 
 
 @dataclass

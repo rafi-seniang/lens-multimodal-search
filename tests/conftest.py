@@ -9,10 +9,11 @@ from PIL import Image
 
 from app.api.deps import get_lens
 from app.core.config import Settings
+from app.engines.keyword import KeywordIndex
 from app.main import create_app
-from app.search.collection import Photograph, load_collection, write_index
-from app.search.keyword import KeywordIndex
-from app.search.service import Lens
+from app.repositories.collection import load_collection, write_index
+from app.schemas.photographs import Photograph
+from app.services.lens import Lens
 
 FAKE_MODEL = "fake-embedder"
 # Three directions stand in for what a picture shows: a dog, a boat, a bridge

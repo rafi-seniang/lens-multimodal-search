@@ -4,12 +4,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_lens
-from app.schemas import ServiceMeta
-from app.search.service import Lens
+from app.api.deps import get_search_controller
+from app.controllers.search import SearchController
+from app.schemas.meta import ServiceMeta
 
 router = APIRouter(tags=["health"])
-VERSION = "0.2.0"
 
 
 @router.get("/health")
@@ -18,13 +17,5 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/meta")
-async def meta(lens: Annotated[Lens, Depends(get_lens)]) -> ServiceMeta:
-    return ServiceMeta(
-        id="lens",
-        name="Lens",
-        summary="Semantic image search with EmbeddingGemma 2 and Typesense, plus custom picture indexing.",
-        version=VERSION,
-        engine=lens.model,
-        own_ui_path="/docs",
-        docs_path="/docs",
-    )
+async def meta(controller: Annotated[SearchController, Depends(get_search_controller)]) -> ServiceMeta:
+    return controller.meta()

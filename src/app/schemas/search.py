@@ -1,8 +1,13 @@
-"""Response models. Request inputs are query parameters and uploaded files, validated in the routes."""
+"""Search inputs and responses. Inputs are query parameters and uploaded files, validated in the routes."""
+
+from typing import Literal
 
 from pydantic import BaseModel
 
-from app.search.collection import Photograph
+from app.schemas.photographs import Photograph
+
+Mode = Literal["hybrid", "picture", "caption"]
+OriginFilter = Literal["all", "upload", "met"]
 
 
 class Hit(BaseModel):
@@ -46,15 +51,3 @@ class CollectionInfo(BaseModel):
     dimensions: int
     source: str
     licence: str
-
-
-class ServiceMeta(BaseModel):
-    """What the lab frontend's lobby shows about this backend (the Lab backend contract)."""
-
-    id: str
-    name: str
-    summary: str
-    version: str
-    engine: str
-    own_ui_path: str
-    docs_path: str
