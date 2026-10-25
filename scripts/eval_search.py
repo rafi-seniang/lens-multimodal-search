@@ -14,11 +14,11 @@ from typing import get_args
 
 import pandas as pd
 
-from app.core.config import get_settings
-from app.core.resources import build_resources
 from app.engines.keyword import KeywordIndex
-from app.schemas.search import Mode
-from app.services.lens import Lens
+from app.features.search.schemas import Mode
+from app.features.search.service import Lens
+from app.platform.resources import build_resources
+from config.settings import get_settings
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 QUERIES = REPOSITORY / "data" / "eval_queries.jsonl"

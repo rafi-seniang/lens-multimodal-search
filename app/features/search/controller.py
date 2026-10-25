@@ -7,11 +7,7 @@ from collections import Counter
 from fastapi import UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from app import VERSION
-from app.core.config import Settings
-from app.core.errors import ImageTooLarge, InvalidAction, UnreadableImage
-from app.schemas.meta import ServiceMeta
-from app.schemas.search import (
+from app.features.search.schemas import (
     CollectionInfo,
     DeleteResult,
     IngestResult,
@@ -20,7 +16,9 @@ from app.schemas.search import (
     SearchResult,
     SubjectCount,
 )
-from app.services.lens import Lens
+from app.features.search.service import Lens
+from app.platform.errors import ImageTooLarge, InvalidAction, UnreadableImage
+from config.settings import Settings
 
 
 async def decode_upload(file: UploadFile, max_upload_bytes: int) -> Image.Image:
@@ -86,15 +84,4 @@ class SearchController:
             dimensions=self._lens.collection.dimensions,
             source="The Metropolitan Museum of Art (CC0) and local uploads",
             licence="CC0 1.0 and user uploads",
-        )
-
-    def meta(self) -> ServiceMeta:
-        return ServiceMeta(
-            id="lens",
-            name="Lens",
-            summary="Semantic image search with EmbeddingGemma 2 and Typesense, plus custom picture indexing.",
-            version=VERSION,
-            engine=self._lens.model,
-            own_ui_path="/docs",
-            docs_path="/docs",
         )

@@ -70,16 +70,40 @@ also reports the agreement with exact search (`picture_mode_against_exact_search
 
 ```powershell
 # first time only: embed the 271 photographs (33 s, 1.98 GB peak GPU memory on the RTX 5050)
-$env:PYTHONPATH='src'; ..\..\.venv\Scripts\python.exe scripts\build_index.py
+$env:PYTHONPATH='.'; ..\..\.venv\Scripts\python.exe scripts\build_index.py
 # start Typesense 27.1 in Docker on port 8108, then start Lens on port 8030
-docker compose up -d typesense
+docker compose up -d typesense redis
 copy .env.example .env
-..\..\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir src --port 8030
+..\..\.venv\Scripts\python.exe main.py                  # or: uvicorn main:app --port 8030
 ```
 
 At startup the service loads the index and `google/embeddinggemma-2` (~2.0 GB on the GPU), creates or syncs the
 `lens_photographs` collection in Typesense (`VECTOR_STORE=typesense`), and refuses to start if Typesense or the index is
 unreachable.
+
+## Layout
+
+Feature-first (`docs/adr/0003-feature-first-layout.md`): each feature is one folder, and what every feature shares is
+in `app/platform`.
+
+```
+main.py                     entry point
+config/                     settings (every environment value, with a comment) and JSON logging
+app/
+  bootstrap.py              the app factory: middleware, error handlers, /v1 behind the API key and the rate limit
+  platform/                 resources (model, Typesense, Redis, built once), dependencies, errors, middleware,
+                            security, rate_limit, redis
+  engines/                  EmbeddingGemma 2 (text and pictures in one space) and BM25 over captions
+  features/
+    search/                 router, controller (uploads, limits), service (Lens: picture, caption, hybrid),
+                            typesense_store, collection (files on disk), schemas, dependencies
+    health/                 /health and /meta
+scripts/                    fetch_collection, build_index, eval_search (run from the repository root with PYTHONPATH=.)
+tests/                      a deterministic 3D fake embedder, no GPU or network
+```
+
+Each API key gets `RATE_LIMIT_PER_MINUTE` requests a minute on `/v1`, counted in Redis, then a 429 with
+`Retry-After`. Embedding a picture is the expensive call, so the limit keeps one client from holding the GPU.
 
 ## API
 
@@ -98,7 +122,7 @@ unreachable.
 ## Checks
 
 `ruff check . && ruff format --check . && mypy && pytest -q` (18 tests with a deterministic 3D fake embedder, no GPU or
-network). Run `python scripts/eval_search.py` with `PYTHONPATH=src` after `scripts/build_index.py`. It searches
+network). Run `python scripts/eval_search.py` with `PYTHONPATH=.` after `scripts/build_index.py`. It searches
 through the configured `STORE_BACKEND` and writes `results/eval_search_typesense.json` or
 `results/eval_search_memory.json`.
 

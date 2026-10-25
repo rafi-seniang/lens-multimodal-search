@@ -1,10 +1,27 @@
-"""Search inputs and responses. Inputs are query parameters and uploaded files, validated in the routes."""
+"""Photographs, search inputs and responses. Inputs are query parameters and uploaded files, validated in the router."""
 
 from typing import Literal
 
 from pydantic import BaseModel
 
-from app.schemas.photographs import Photograph
+Origin = Literal["met", "upload"]
+
+
+class Photograph(BaseModel):
+    id: str
+    title: str
+    artist: str
+    date: str
+    medium: str
+    tags: list[str]
+    image: str
+    width: int
+    height: int
+    source_url: str
+    licence: str
+    origin: Origin = "met"
+    created_at: int = 0
+
 
 Mode = Literal["hybrid", "picture", "caption"]
 OriginFilter = Literal["all", "upload", "met"]

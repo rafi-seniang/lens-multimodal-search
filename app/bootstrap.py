@@ -1,17 +1,19 @@
-"""App factory. `uvicorn app.main:app` for the default settings, create_app(settings) in tests."""
+"""The app factory: settings, logging, middleware, error handlers, then one router per feature."""
 
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app import VERSION
-from app.api.middleware import register_middleware
-from app.api.routes import health, search
-from app.core.config import Settings, get_settings
-from app.core.errors import register_error_handlers
-from app.core.logging import configure_logging
-from app.core.resources import lifespan
-from app.core.security import require_api_key
+from app.features.health import router as health
+from app.features.search import router as search
+from app.platform.dependencies import enforce_rate_limit
+from app.platform.errors import register_error_handlers
+from app.platform.middleware import register_middleware
+from app.platform.resources import lifespan
+from app.platform.security import require_api_key
+from config.logging import configure_logging
+from config.settings import Settings, get_settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -33,13 +35,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    api = APIRouter(prefix="/v1", dependencies=[Depends(require_api_key)])
+    # Key first, then the rate limit, so an unknown caller never spends a known caller's budget
+    api = APIRouter(prefix="/v1", dependencies=[Depends(require_api_key), Depends(enforce_rate_limit)])
     api.include_router(search.router)
     app.include_router(health.router)
     app.include_router(api)
     # The photographs themselves, public like any picture on a web page
     app.mount("/images", StaticFiles(directory=settings.collection_dir / "images", check_dir=False), name="images")
     return app
-
-
-app = create_app()

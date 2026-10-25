@@ -7,13 +7,15 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from app.api.deps import get_lens
-from app.core.config import Settings
+from app.bootstrap import create_app
 from app.engines.keyword import KeywordIndex
-from app.main import create_app
-from app.repositories.collection import load_collection, write_index
-from app.schemas.photographs import Photograph
-from app.services.lens import Lens
+from app.features.search.collection import load_collection, write_index
+from app.features.search.schemas import Photograph
+from app.features.search.service import Lens
+from app.platform.dependencies import get_resources
+from app.platform.rate_limit import InMemoryRateLimiter
+from app.platform.resources import Resources
+from config.settings import Settings
 
 FAKE_MODEL = "fake-embedder"
 # Three directions stand in for what a picture shows: a dog, a boat, a bridge
@@ -87,7 +89,8 @@ def lens(collection_dir: Path) -> Lens:
 
 def make_app(settings: Settings, lens: Lens) -> Any:
     app = create_app(settings)
-    app.dependency_overrides[get_lens] = lambda: lens
+    resources = Resources(lens=lens, rate_limiter=InMemoryRateLimiter())
+    app.dependency_overrides[get_resources] = lambda: resources
     return app
 
 

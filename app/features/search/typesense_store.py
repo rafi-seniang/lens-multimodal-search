@@ -6,9 +6,8 @@ from typing import Any
 import httpx
 import numpy as np
 
-from app.core.errors import NotFound, StoreUnavailable
-from app.schemas.photographs import Photograph
-from app.schemas.search import Hit, Mode, OriginFilter
+from app.features.search.schemas import Hit, Mode, OriginFilter, Photograph
+from app.platform.errors import NotFound, StoreUnavailable
 
 TEXT_FIELDS = "title,artist,date,tags"
 IMPORT_BATCH_SIZE = 100

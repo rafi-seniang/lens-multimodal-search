@@ -7,12 +7,12 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from app.core.errors import InvalidAction, NotFound
 from app.engines.embedder import Embedder
 from app.engines.keyword import KeywordIndex
-from app.repositories.collection import Collection, remove_uploaded_file, save_uploads, write_uploaded_files
-from app.repositories.typesense_store import TypesensePhotographStore
-from app.schemas.search import Hit, IngestResult, Mode, OriginFilter, SearchResult
+from app.features.search.collection import Collection, remove_uploaded_file, save_uploads, write_uploaded_files
+from app.features.search.schemas import Hit, IngestResult, Mode, OriginFilter, SearchResult
+from app.features.search.typesense_store import TypesensePhotographStore
+from app.platform.errors import InvalidAction, NotFound
 
 
 def top_positions(scores: np.ndarray, limit: int) -> np.ndarray:

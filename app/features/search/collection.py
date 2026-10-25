@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from app.schemas.photographs import Photograph
+from app.features.search.schemas import Photograph
 
 COLLECTION_FILE = "collection.jsonl"
 VECTORS_FILE = "vectors.npy"

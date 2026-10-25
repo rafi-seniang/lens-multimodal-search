@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     max_upload_bytes: int = Field(default=8_000_000, gt=0)
     max_batch_uploads: int = Field(default=12, gt=0)
 
+    # Redis for the shared rate limit. Empty counts per process: local runs only
+    redis_url: SecretStr = SecretStr("")
+    redis_timeout_seconds: float = Field(default=2, gt=0)
+    # Requests per caller (API key, or client address without one) per minute on /v1
+    rate_limit_per_minute: int = Field(default=120, gt=0)
+
     @property
     def api_key_list(self) -> list[str]:
         return [key.strip() for key in self.api_keys.get_secret_value().split(",") if key.strip()]

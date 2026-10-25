@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.core.logging import request_id
+from config.logging import request_id
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,14 @@ class StoreUnavailable(AppError):
     status, title = 503, "Vector store unavailable"
 
 
+class RateLimited(AppError):
+    status, title = 429, "Too many requests"
+
+    def __init__(self, detail: str, retry_after_seconds: int) -> None:
+        super().__init__(detail)
+        self.retry_after_seconds = retry_after_seconds
+
+
 def problem(status: int, title: str, detail: str, request: Request) -> JSONResponse:
     body = {
         "type": "about:blank",
@@ -59,7 +67,10 @@ def problem(status: int, title: str, detail: str, request: Request) -> JSONRespo
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def app_error(request: Request, exc: AppError) -> JSONResponse:
-        return problem(exc.status, exc.title, exc.detail, request)
+        response = problem(exc.status, exc.title, exc.detail, request)
+        if isinstance(exc, RateLimited):
+            response.headers["Retry-After"] = str(exc.retry_after_seconds)
+        return response
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:

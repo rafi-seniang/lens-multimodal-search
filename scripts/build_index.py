@@ -9,10 +9,10 @@ import numpy as np
 import torch
 from PIL import Image
 
-from app.core.config import get_settings
-from app.core.resources import load_secrets
 from app.engines.embedder import GemmaEmbedder
-from app.repositories.collection import read_photographs, write_index
+from app.features.search.collection import read_photographs, write_index
+from app.platform.resources import load_secrets
+from config.settings import get_settings
 
 
 def main() -> None:

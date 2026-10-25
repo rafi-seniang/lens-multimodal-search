@@ -4,9 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Query, UploadFile
 
-from app.api.deps import get_search_controller
-from app.controllers.search import SearchController
-from app.schemas.search import CollectionInfo, DeleteResult, IngestResult, Mode, OriginFilter, SearchResult
+from app.features.search.controller import SearchController
+from app.features.search.dependencies import get_search_controller
+from app.features.search.schemas import CollectionInfo, DeleteResult, IngestResult, Mode, OriginFilter, SearchResult
 
 router = APIRouter(tags=["search"])
 Controller = Annotated[SearchController, Depends(get_search_controller)]

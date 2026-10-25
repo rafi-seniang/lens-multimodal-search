@@ -16,6 +16,7 @@ dependencies = [
     "numpy>=2.0",
     "scikit-learn>=1.5",
     "pillow>=10.0",
+    "redis>=5.0",
 ]
 
 [project.optional-dependencies]
@@ -38,12 +39,15 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+include = ["app*", "config*"]
+
+[tool.setuptools]
+py-modules = ["main"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-pythonpath = ["src", "."]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 120
@@ -58,8 +62,7 @@ ignore = ["S101"]  # asserts are fine in tests
 
 [tool.mypy]
 python_version = "3.11"
-mypy_path = "src"
-packages = ["app"]
+files = ["main.py", "app", "config"]
 strict = true
 plugins = ["pydantic.mypy"]
 

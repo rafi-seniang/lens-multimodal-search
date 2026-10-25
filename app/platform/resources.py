@@ -6,19 +6,24 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from redis.asyncio import Redis
 
-from app.core.config import Settings
 from app.engines.embedder import GemmaEmbedder
 from app.engines.keyword import KeywordIndex
-from app.repositories.collection import load_collection
-from app.repositories.typesense_store import TypesensePhotographStore
-from app.services.lens import Lens
+from app.features.search.collection import load_collection
+from app.features.search.service import Lens
+from app.features.search.typesense_store import TypesensePhotographStore
+from app.platform.rate_limit import InMemoryRateLimiter, RateLimiter, RedisRateLimiter
+from app.platform.redis import connect_redis
+from config.settings import Settings
 
 
 @dataclass
 class Resources:
     lens: Lens
+    rate_limiter: RateLimiter
     store: TypesensePhotographStore | None = None
+    redis: Redis | None = None
 
 
 def load_secrets(settings: Settings) -> None:
@@ -49,7 +54,9 @@ async def build_resources(settings: Settings) -> Resources:
         store=store,
         collection_dir=settings.collection_dir,
     )
-    return Resources(lens=lens, store=store)
+    redis = await connect_redis(settings)
+    rate_limiter: RateLimiter = RedisRateLimiter(redis) if redis is not None else InMemoryRateLimiter()
+    return Resources(lens=lens, rate_limiter=rate_limiter, store=store, redis=redis)
 
 
 def lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
@@ -62,5 +69,7 @@ def lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncContextMana
         finally:
             if resources.store is not None:
                 await resources.store.close()
+            if resources.redis is not None:
+                await resources.redis.aclose()
 
     return run

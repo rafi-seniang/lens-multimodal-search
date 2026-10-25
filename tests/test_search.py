@@ -6,7 +6,7 @@ import httpx
 import pytest
 from PIL import Image
 
-from app.repositories.collection import INDEX_FILE, load_collection
+from app.features.search.collection import INDEX_FILE, load_collection
 from tests.conftest import FAKE_MODEL
 
 
@@ -161,7 +161,7 @@ async def test_uploading_a_picture_indexes_it_for_text_and_origin_search(
 
 
 async def test_typesense_store_builds_pure_vector_and_neighbour_queries() -> None:
-    from app.repositories.typesense_store import TypesensePhotographStore
+    from app.features.search.typesense_store import TypesensePhotographStore
     from tests.conftest import BOAT, DOG, PHOTOGRAPHS
 
     seen_bodies: list[dict] = []

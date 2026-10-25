@@ -14,7 +14,7 @@ from pathlib import Path
 import httpx
 from PIL import Image
 
-from app.core.config import get_settings
+from config.settings import get_settings
 
 API = "https://collectionapi.metmuseum.org/public/collection"
 PHOTOGRAPHS_DEPARTMENT = 19
