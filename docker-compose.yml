@@ -1,0 +1,19 @@
+# Typesense vector database for Lens. Run: docker compose up -d typesense
+services:
+  typesense:
+    image: typesense/typesense:27.1
+    container_name: lens-typesense
+    restart: unless-stopped
+    command:
+      - "--data-dir"
+      - "/data"
+      - "--api-key"
+      - "${TYPESENSE_API_KEY:-lens-local-typesense}"
+      - "--enable-cors"
+    ports:
+      - "8108:8108"
+    volumes:
+      - lens_typesense_data:/data
+
+volumes:
+  lens_typesense_data:

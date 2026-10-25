@@ -1,0 +1,77 @@
+{
+ "photographs": 271,
+ "queries": 57,
+ "model": "google/embeddinggemma-2",
+ "by_mode_and_style": {
+  "caption/description": {
+   "precision_at_10": 0.158,
+   "hit_at_1": 0.316,
+   "reciprocal_rank": 0.426
+  },
+  "caption/english": {
+   "precision_at_10": 0.379,
+   "hit_at_1": 0.842,
+   "reciprocal_rank": 0.868
+  },
+  "caption/indonesian": {
+   "precision_at_10": 0.0,
+   "hit_at_1": 0.0,
+   "reciprocal_rank": 0.0
+  },
+  "hybrid/description": {
+   "precision_at_10": 0.711,
+   "hit_at_1": 0.947,
+   "reciprocal_rank": 0.974
+  },
+  "hybrid/english": {
+   "precision_at_10": 0.853,
+   "hit_at_1": 1.0,
+   "reciprocal_rank": 1.0
+  },
+  "hybrid/indonesian": {
+   "precision_at_10": 0.826,
+   "hit_at_1": 1.0,
+   "reciprocal_rank": 1.0
+  },
+  "picture/description": {
+   "precision_at_10": 0.789,
+   "hit_at_1": 1.0,
+   "reciprocal_rank": 1.0
+  },
+  "picture/english": {
+   "precision_at_10": 0.837,
+   "hit_at_1": 0.947,
+   "reciprocal_rank": 0.974
+  },
+  "picture/indonesian": {
+   "precision_at_10": 0.826,
+   "hit_at_1": 1.0,
+   "reciprocal_rank": 1.0
+  }
+ },
+ "overall": {
+  "caption": {
+   "precision_at_10": 0.179,
+   "hit_at_1": 0.386,
+   "reciprocal_rank": 0.431,
+   "ms": 0.3
+  },
+  "hybrid": {
+   "precision_at_10": 0.796,
+   "hit_at_1": 0.982,
+   "reciprocal_rank": 0.991,
+   "ms": 69.2
+  },
+  "picture": {
+   "precision_at_10": 0.818,
+   "hit_at_1": 0.982,
+   "reciprocal_rank": 0.991,
+   "ms": 67.0
+  }
+ },
+ "subjects_left_out": [
+  "Bicycles"
+ ],
+ "random_precision": 0.054,
+ "picture_to_picture_shared_subject_at_5": 0.745
+}
