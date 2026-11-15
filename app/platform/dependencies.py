@@ -40,7 +40,7 @@ async def enforce_rate_limit(
     rate_limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
-    caller = caller_of(request)
+    caller = caller_of(request, settings.api_key_list)
     await _check_cap(
         rate_limiter,
         caller,
@@ -72,7 +72,7 @@ async def enforce_upload_limit(
     rate_limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
-    caller = caller_of(request)
+    caller = caller_of(request, settings.api_key_list)
     await _check_cap(
         rate_limiter,
         caller,

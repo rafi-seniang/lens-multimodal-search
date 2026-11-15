@@ -1,6 +1,7 @@
 """Requests per caller per minute and optional daily caps, counted in Redis so every replica shares one count."""
 
 import datetime as dt
+import secrets
 import time
 from typing import Protocol
 
@@ -58,9 +59,9 @@ class InMemoryRateLimiter:
         return None if self._counts[key] <= limit else seconds_left
 
 
-def caller_of(request: Request) -> str:
-    """The API key when one is sent, otherwise the client address."""
-    api_key = request.headers.get("X-API-Key")
-    if api_key:
+def caller_of(request: Request, accepted_keys: list[str]) -> str:
+    """An accepted API key when one is sent, otherwise the client address. Any other key would be a fresh count."""
+    api_key = request.headers.get("X-API-Key", "")
+    if any(secrets.compare_digest(api_key.encode(), key.encode()) for key in accepted_keys):
         return f"key:{api_key[-8:]}"  # the key's end tells callers apart and keeps the full key out of Redis
     return f"ip:{request.client.host if request.client else 'unknown'}"

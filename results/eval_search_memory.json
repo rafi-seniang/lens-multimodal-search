@@ -65,16 +65,23 @@
    "precision_at_10": 0.927,
    "hit_at_1": 0.983,
    "reciprocal_rank": 0.992,
-   "ms": 379.4
+   "ms": 387.75
   },
   "picture": {
    "precision_at_10": 0.987,
    "hit_at_1": 1.0,
    "reciprocal_rank": 1.0,
-   "ms": 380.7
+   "ms": 0.6
   }
  },
  "subjects_left_out": [],
  "random_precision": 0.049,
- "picture_to_picture_shared_subject_at_5": 0.964
+ "picture_to_picture_shared_subject_at_5": 0.964,
+ "picture_score_cutoff": {
+  "lowest_real_query_top_score": 0.3818,
+  "lowest_real_query": "wicker baskets lifted into the morning sky beneath vibrant fabric domes",
+  "highest_no_match_score": 0.3162,
+  "highest_no_match_query": "mechanical computer keyboard",
+  "midpoint": 0.349
+ }
 }

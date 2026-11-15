@@ -226,6 +226,7 @@ async def test_gemini_embedder_encodes_text_and_images(monkeypatch: pytest.Monke
         embedder = GeminiEmbedder(model_id="gemini-embedding-2", dimensions=3, http_async_client=mock_http)
         text_vec = await embedder.text("anjing")
         assert np.allclose(text_vec, np.array([0.6, 0.8, 0.0], dtype=np.float32))
+        assert np.array_equal(await embedder.text("anjing"), text_vec)  # the repeat comes from the cache
         batch_vecs = await embedder.images(
             [Image.new("RGB", (4, 4), (10, 20, 30)), Image.new("RGB", (4, 4), (40, 50, 60))]
         )
@@ -233,10 +234,12 @@ async def test_gemini_embedder_encodes_text_and_images(monkeypatch: pytest.Monke
         assert np.allclose(batch_vecs[0], np.array([0.6, 0.8, 0.0], dtype=np.float32))
         await embedder.aclose()
 
-    assert seen[0]["requests"][0]["outputDimensionality"] == 3
-    assert seen[0]["requests"][0]["taskType"] == "RETRIEVAL_QUERY"
+    query_request = seen[0]["requests"][0]
+    assert query_request["outputDimensionality"] == 3
+    assert query_request["content"]["parts"][0]["text"] == "anjing"
+    assert "taskType" not in query_request
     assert len(seen[1]["requests"]) == 2
-    assert seen[1]["requests"][0]["taskType"] == "RETRIEVAL_DOCUMENT"
+    assert "text" not in json.dumps(seen[1]["requests"][0]["content"])
 
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(

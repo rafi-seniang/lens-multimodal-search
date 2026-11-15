@@ -1,8 +1,8 @@
-"""Measure the three search modes on data/eval_queries.jsonl, with The Met's subject tags as the labels.
+"""Measure the three search modes on data/eval_queries.jsonl, with the collection's subject tags as the labels.
 
-A photograph is relevant to a query when The Met tagged it with the query's subject. Tags are not complete (a street
-scene with a horse is not always tagged Horses), so every mode is scored against the same incomplete labels.
-Also measures picture-to-picture search: how many of a photograph's five nearest share one of its subjects.
+A photograph is relevant to a query when it carries the query's subject tag.
+Also measures picture-to-picture search (how many of a photograph's five nearest share one of its subjects) and the
+picture score cutoff: the lowest top score of a real query against the highest score of a query with no match.
 The search runs through the store the service uses (STORE_BACKEND): typesense is what the app serves, memory is exact.
 Run from the repository root after scripts/build_index.py: python scripts/eval_search.py
 """
@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import get_args
 
 import pandas as pd
-from PIL import Image
 
 from app.engines.keyword import KeywordIndex
 from app.features.search.schemas import Mode
@@ -21,31 +20,20 @@ from app.features.search.service import Lens
 from app.platform.resources import build_resources
 from config.settings import get_settings
 
-
-class _CachedTextEmbedder:
-    """Shares text query vectors with exact_lens without altering timed search calls."""
-
-    def __init__(self, inner: object) -> None:
-        self._inner = inner
-        self.name = getattr(inner, "name", "")
-        self.cache: dict[str, object] = {}
-
-    async def text(self, query: str) -> object:
-        if query not in self.cache:
-            self.cache[query] = await self._inner.text(query)  # type: ignore[attr-defined]
-        return self.cache[query]
-
-    async def image(self, image: Image.Image) -> object:
-        return await self._inner.image(image)  # type: ignore[attr-defined]
-
-    async def images(self, batch: list[Image.Image]) -> object:
-        return await self._inner.images(batch)  # type: ignore[attr-defined]
-
-
 REPOSITORY = Path(__file__).resolve().parents[1]
 QUERIES = REPOSITORY / "data" / "eval_queries.jsonl"
 RESULTS = REPOSITORY / "results"
 CUTOFF = 10
+# Nothing in the collection matches these, so their best scores show where "nothing found" begins
+NEGATIVE_QUERIES = [
+    "mechanical computer keyboard",
+    "medical stethoscope on hospital desk",
+    "pembayaran tagihan QRIS",
+    "smartphone layar sentuh retak",
+    "wooden chess pieces on board",
+    "printed accounting invoice document",
+    "knitting wool sweater and needles",
+]
 NEIGHBOURS = 5
 # A subject with fewer photographs than this cannot fill a top ten fairly, so its queries are left out
 MIN_PHOTOGRAPHS = 5
@@ -57,11 +45,10 @@ async def main() -> None:
     try:
         lens = resources.lens
         collection = lens.collection
-        cached_embedder = _CachedTextEmbedder(lens.embedder)
         # Exact search over the same vectors: what the store's approximate index (HNSW) should return
         exact_lens = Lens(
             collection=collection,
-            embedder=cached_embedder,  # type: ignore[arg-type]
+            embedder=lens.embedder,
             keyword=KeywordIndex(collection.photographs),
             fusion_k=settings.fusion_k,
             picture_weight=settings.picture_weight,
@@ -86,7 +73,6 @@ async def main() -> None:
                 result = await lens.search_text(query.query, mode, CUTOFF)
                 if mode == "picture":
                     served_ids = [hit.photograph.id for hit in result.hits]
-                    cached_embedder.cache[query.query] = await lens.embedder.text(query.query)
                 relevant = [query.subject in hit.photograph.tags for hit in result.hits]
                 first = relevant.index(True) + 1 if True in relevant else None
                 rows.append(
@@ -147,6 +133,24 @@ async def main() -> None:
         )
         print(f"Picture to picture: {pd.Series(shared).mean():.3f} of the {NEIGHBOURS} nearest share a subject.")
 
+        # The embedder caches query vectors, so these reuse the ones the searches above fetched
+        positive_tops = {
+            query: float((collection.vectors @ await lens.embedder.text(query)).max()) for query in queries["query"]
+        }
+        negative_tops = {
+            query: float((collection.vectors @ await lens.embedder.text(query)).max()) for query in NEGATIVE_QUERIES
+        }
+        lowest_positive = min(positive_tops, key=positive_tops.__getitem__)
+        highest_negative = max(negative_tops, key=negative_tops.__getitem__)
+        cutoff = {
+            "lowest_real_query_top_score": round(positive_tops[lowest_positive], 4),
+            "lowest_real_query": lowest_positive,
+            "highest_no_match_score": round(negative_tops[highest_negative], 4),
+            "highest_no_match_query": highest_negative,
+            "midpoint": round((positive_tops[lowest_positive] + negative_tops[highest_negative]) / 2, 4),
+        }
+        print(f"Picture score cutoff: {cutoff}")
+
         RESULTS.mkdir(exist_ok=True)
         (RESULTS / f"eval_search_{settings.store_backend}.json").write_text(
             json.dumps(
@@ -170,6 +174,7 @@ async def main() -> None:
                     "subjects_left_out": thin,
                     "random_precision": round(float(base_rate), 3),
                     "picture_to_picture_shared_subject_at_5": round(float(pd.Series(shared).mean()), 3),
+                    "picture_score_cutoff": cutoff,
                 },
                 indent=1,
             ),
