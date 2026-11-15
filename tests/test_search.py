@@ -100,7 +100,7 @@ async def test_health_and_meta_keep_the_lab_contract(client: httpx.AsyncClient) 
 
 def test_an_index_from_another_model_stops_the_service(collection_dir: Path) -> None:
     with pytest.raises(RuntimeError, match="Rebuild it"):
-        load_collection(collection_dir, "google/embeddinggemma-2")
+        load_collection(collection_dir, "gemini-embedding-2")
 
 
 def test_an_index_for_other_photographs_stops_the_service(collection_dir: Path) -> None:
@@ -203,3 +203,133 @@ async def test_typesense_store_builds_pure_vector_and_neighbour_queries() -> Non
     assert "id: 1" in seen_bodies[1]["searches"][0]["vector_query"]
     _ = BOAT
     await mock_http.aclose()
+
+
+async def test_gemini_embedder_encodes_text_and_images(monkeypatch: pytest.MonkeyPatch) -> None:
+    import numpy as np
+
+    from app.engines.embedder import GeminiEmbedder
+    from app.platform.errors import EmbedderUnavailable
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8"))
+        seen.append(body)
+        if "batchEmbedContents" in request.url.path:
+            count = len(body["requests"])
+            return httpx.Response(200, json={"embeddings": [{"values": [3.0, 4.0, 0.0]} for _ in range(count)]})
+        return httpx.Response(200, json={"embedding": {"values": [3.0, 4.0, 0.0]}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as mock_http:
+        embedder = GeminiEmbedder(model_id="gemini-embedding-2", dimensions=3, http_async_client=mock_http)
+        text_vec = await embedder.text("anjing")
+        assert np.allclose(text_vec, np.array([0.6, 0.8, 0.0], dtype=np.float32))
+        batch_vecs = await embedder.images(
+            [Image.new("RGB", (4, 4), (10, 20, 30)), Image.new("RGB", (4, 4), (40, 50, 60))]
+        )
+        assert batch_vecs.shape == (2, 3)
+        assert np.allclose(batch_vecs[0], np.array([0.6, 0.8, 0.0], dtype=np.float32))
+        await embedder.aclose()
+
+    assert seen[0]["requests"][0]["outputDimensionality"] == 3
+    assert seen[0]["requests"][0]["taskType"] == "RETRIEVAL_QUERY"
+    assert len(seen[1]["requests"]) == 2
+    assert seen[1]["requests"][0]["taskType"] == "RETRIEVAL_DOCUMENT"
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(429, json={"error": {"code": 429, "message": "quota"}})
+        )
+    ) as fail_http:
+        failing = GeminiEmbedder(model_id="gemini-embedding-2", dimensions=3, http_async_client=fail_http)
+        with pytest.raises(EmbedderUnavailable, match=r"Gemini.*answered 429"):
+            await failing.text("anjing")
+        await failing.aclose()
+
+
+async def test_typesense_bootstrap_recreates_collection_when_model_changes() -> None:
+    from app.features.search.typesense_store import TypesensePhotographStore
+    from tests.conftest import PHOTOGRAPHS, VECTORS
+
+    ops: list[tuple[str, str, dict | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/collections/lens_photographs":
+            ops.append(("GET", request.url.path, None))
+            return httpx.Response(
+                200,
+                json={
+                    "num_documents": len(PHOTOGRAPHS),
+                    "fields": [{"name": "embedding", "num_dim": 3}],
+                    "metadata": {"model": "google/embeddinggemma-2"},
+                },
+            )
+        if request.method == "DELETE":
+            ops.append(("DELETE", request.url.path, None))
+            return httpx.Response(200, json={})
+        if request.method == "POST" and request.url.path == "/collections":
+            body = json.loads(request.content.decode("utf-8"))
+            ops.append(("POST", request.url.path, body))
+            return httpx.Response(201, json=body)
+        if request.method == "POST" and request.url.path.endswith("/documents/import"):
+            ops.append(("IMPORT", request.url.path, None))
+            lines = "\n".join('{"success": true}' for _ in PHOTOGRAPHS)
+            return httpx.Response(200, text=lines)
+        return httpx.Response(404)
+
+    mock_http = httpx.AsyncClient(base_url="http://typesense.local", transport=httpx.MockTransport(handler))
+    store = TypesensePhotographStore(
+        "http://typesense.local", "key", "lens_photographs", search_ef=200, client=mock_http
+    )
+    await store.bootstrap(PHOTOGRAPHS, VECTORS, model="gemini-embedding-2")
+    assert [op[0] for op in ops] == ["GET", "DELETE", "POST", "IMPORT"]
+    assert ops[2][2] is not None and ops[2][2]["metadata"] == {"model": "gemini-embedding-2"}
+    await mock_http.aclose()
+
+
+async def test_picture_cutoff_and_daily_caps(collection_dir: Path) -> None:
+    from app.engines.keyword import KeywordIndex
+    from app.features.search.collection import load_collection
+    from app.features.search.service import Lens
+    from config.settings import Settings
+    from tests.conftest import FakeEmbedder, make_app
+
+    collection = load_collection(collection_dir, FAKE_MODEL)
+    lens_with_cutoff = Lens(
+        collection,
+        FakeEmbedder(),
+        KeywordIndex(collection.photographs),
+        fusion_k=60,
+        min_picture_score=0.7,
+        collection_dir=collection_dir,
+    )
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        store_backend="memory",
+        api_keys="test-key",
+        collection_dir=collection_dir,
+        min_picture_score=0.7,
+        daily_requests_per_caller=3,
+        daily_uploads_per_caller=1,
+    )
+    transport = httpx.ASGITransport(app=make_app(settings, lens_with_cutoff))
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", headers={"X-API-Key": "test-key"}
+    ) as client:
+        unrelated = await client.get("/v1/search", params={"q": "spaceship", "mode": "picture"})
+        assert unrelated.status_code == 200
+        assert unrelated.json()["hits"] == []
+
+        relevant = await client.get("/v1/search", params={"q": "dog", "mode": "picture"})
+        assert ids(relevant.json()) == ["1", "2"]
+
+        upload1 = await client.post("/v1/photographs", files=[("files", ("a.png", png((255, 0, 0)), "image/png"))])
+        assert upload1.status_code == 201
+        upload2 = await client.post("/v1/photographs", files=[("files", ("b.png", png((255, 0, 0)), "image/png"))])
+        assert upload2.status_code == 429
+        # Fourth /v1 call hits daily_requests_per_caller=3 on the next request
+        blocked = await client.get("/v1/collection")
+        assert blocked.status_code == 429

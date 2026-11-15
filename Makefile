@@ -23,7 +23,7 @@ check: lint typecheck test   ## what CI runs
 collection:         ## download the photographs from The Met's Open Access API
 	PYTHONPATH=. python scripts/fetch_collection.py
 
-index:              ## embed every photograph (GPU, about 2.5 GB)
+index:              ## embed every photograph with Gemini Embedding 2
 	PYTHONPATH=. python scripts/build_index.py
 
 eval:               ## measure picture, caption and hybrid search against The Met's subject tags

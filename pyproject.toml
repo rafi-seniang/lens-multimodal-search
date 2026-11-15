@@ -1,7 +1,7 @@
 [project]
 name = "lens"
 version = "0.1.0"
-description = "Search photographs by words in English or Indonesian, or by a picture, with EmbeddingGemma 2"
+description = "Search photographs by words in English or Indonesian, or by a picture, with Gemini Embedding 2"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
@@ -11,8 +11,7 @@ dependencies = [
     "pydantic-settings>=2.3",
     "python-dotenv>=1.0",
     "python-multipart>=0.0.9",
-    "sentence-transformers>=6.2",
-    "transformers>=5.20",
+    "google-genai>=3.3.0",
     "numpy>=2.0",
     "scikit-learn>=1.5",
     "pillow>=10.0",
@@ -67,5 +66,5 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["sklearn.*", "sentence_transformers.*"]
+module = ["sklearn.*"]
 ignore_missing_imports = true

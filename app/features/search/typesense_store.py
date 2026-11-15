@@ -1,4 +1,4 @@
-"""Typesense vector store over its REST API. Embeddings are computed on the GPU and stored in Typesense."""
+"""Typesense vector store over its REST API. Embeddings come from Gemini Embedding 2 and live in Typesense."""
 
 import json
 from typing import Any
@@ -13,8 +13,8 @@ TEXT_FIELDS = "title,artist,date,tags"
 IMPORT_BATCH_SIZE = 100
 
 
-def collection_schema(name: str, dimensions: int) -> dict[str, Any]:
-    return {
+def collection_schema(name: str, dimensions: int, model: str = "") -> dict[str, Any]:
+    schema: dict[str, Any] = {
         "name": name,
         "fields": [
             {"name": "title", "type": "string"},
@@ -33,6 +33,9 @@ def collection_schema(name: str, dimensions: int) -> dict[str, Any]:
         ],
         "default_sorting_field": "created_at",
     }
+    if model:
+        schema["metadata"] = {"model": model}
+    return schema
 
 
 def origin_clause(origin: OriginFilter, tag: str | None = None) -> str:
@@ -105,7 +108,7 @@ class TypesensePhotographStore:
             raise StoreUnavailable(f"Typesense {method} {path} returned {response.status_code}: {response.text[:240]}")
         return response
 
-    async def bootstrap(self, photographs: list[Photograph], vectors: np.ndarray) -> None:
+    async def bootstrap(self, photographs: list[Photograph], vectors: np.ndarray, model: str = "") -> None:
         dimensions = int(vectors.shape[1])
         try:
             response = await self._http.get(f"/collections/{self._collection}")
@@ -123,13 +126,14 @@ class TypesensePhotographStore:
             existing_dim = next(
                 (field.get("num_dim", 0) for field in info.get("fields", []) if field["name"] == "embedding"), 0
             )
+            existing_model = str((info.get("metadata") or {}).get("model", ""))
             existing_docs = int(info.get("num_documents", 0))
-            if existing_dim != dimensions:
+            if existing_dim != dimensions or (model and existing_model != model):
                 await self._call("DELETE", f"/collections/{self._collection}")
                 needs_create = True
 
         if needs_create:
-            await self._call("POST", "/collections", json=collection_schema(self._collection, dimensions))
+            await self._call("POST", "/collections", json=collection_schema(self._collection, dimensions, model))
 
         if needs_create or existing_docs != len(photographs):
             await self.upsert(photographs, vectors)
@@ -176,6 +180,7 @@ class TypesensePhotographStore:
         limit: int,
         origin: OriginFilter,
         caption_ids: set[str],
+        min_picture_score: float = 0.0,
     ) -> list[Hit]:
         params: dict[str, Any] = {
             "collection": self._collection,
@@ -200,9 +205,26 @@ class TypesensePhotographStore:
         result = (await self._call("POST", "/multi_search", json={"searches": [params]})).json()["results"][0]
         if "error" in result:
             raise StoreUnavailable(f"Typesense search error: {result['error']}")
-        return [hit_from_typesense(raw, mode, caption_ids) for raw in result.get("hits", [])]
+        hits: list[Hit] = []
+        for raw in result.get("hits", []):
+            hit = hit_from_typesense(raw, mode, caption_ids)
+            if min_picture_score > 0 and mode != "caption":
+                distance = raw.get("vector_distance")
+                vector_score = 1.0 - float(distance) if distance is not None else None
+                if mode == "picture" and hit.score < min_picture_score:
+                    continue
+                if (
+                    mode == "hybrid"
+                    and not hit.in_caption
+                    and (vector_score is None or vector_score < min_picture_score)
+                ):
+                    continue
+            hits.append(hit)
+        return hits
 
-    async def search_vector(self, vector: np.ndarray, limit: int, origin: OriginFilter) -> list[Hit]:
+    async def search_vector(
+        self, vector: np.ndarray, limit: int, origin: OriginFilter, min_picture_score: float = 0.0
+    ) -> list[Hit]:
         params: dict[str, Any] = {
             "collection": self._collection,
             "q": "*",
@@ -216,7 +238,10 @@ class TypesensePhotographStore:
         result = (await self._call("POST", "/multi_search", json={"searches": [params]})).json()["results"][0]
         if "error" in result:
             raise StoreUnavailable(f"Typesense vector search error: {result['error']}")
-        return [hit_from_typesense(raw, "picture", set()) for raw in result.get("hits", [])]
+        hits = [hit_from_typesense(raw, "picture", set()) for raw in result.get("hits", [])]
+        if min_picture_score > 0:
+            return [hit for hit in hits if hit.score >= min_picture_score]
+        return hits
 
     async def similar(self, photograph_id: str, limit: int) -> tuple[str, list[Hit]]:
         try:
