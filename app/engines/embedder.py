@@ -2,6 +2,7 @@
 
 import io
 import os
+from collections import OrderedDict
 from typing import Any, Protocol
 
 import httpx
@@ -12,6 +13,11 @@ from google.genai.errors import APIError
 from PIL import Image
 
 from app.platform.errors import EmbedderUnavailable
+
+# gemini-embedding-2 ignores task_type. Google's "task: search result | query:" prefix ranked the same here and narrowed
+# the gap between real and no-match queries (README "Query prefix"), so queries are sent bare like the pictures
+# Repeated queries (the page's default and its examples) cost no API call. About 3 KB each at 768 dimensions
+QUERY_CACHE_SIZE = 1024
 
 
 class Embedder(Protocol):
@@ -75,6 +81,7 @@ class GeminiEmbedder:
         )
         self._clients = [genai.Client(api_key=key, http_options=http_options) for key in api_keys]
         self._active_index = 0
+        self._query_vectors: OrderedDict[str, np.ndarray] = OrderedDict()
 
     async def aclose(self) -> None:
         for client in self._clients:
@@ -91,7 +98,7 @@ class GeminiEmbedder:
             )
         return _normalize(matrix)
 
-    async def _embed(self, contents: Any, task_type: str) -> np.ndarray:
+    async def _embed(self, contents: Any) -> np.ndarray:
         count = len(self._clients)
         for offset in range(count):
             index = (self._active_index + offset) % count
@@ -100,7 +107,7 @@ class GeminiEmbedder:
                 response = await client.aio.models.embed_content(
                     model=self._model,
                     contents=contents,
-                    config=types.EmbedContentConfig(output_dimensionality=self._dimensions, task_type=task_type),
+                    config=types.EmbedContentConfig(output_dimensionality=self._dimensions),
                 )
             except APIError as error:
                 detail = (error.message or "")[:300]
@@ -114,8 +121,16 @@ class GeminiEmbedder:
         raise EmbedderUnavailable(f"Gemini ({self._model}) exhausted all API keys.")
 
     async def text(self, query: str) -> np.ndarray:
+        cached = self._query_vectors.get(query)
+        if cached is not None:
+            self._query_vectors.move_to_end(query)
+            return cached
         content = types.Content(parts=[types.Part.from_text(text=query)])
-        return np.asarray((await self._embed([content], "RETRIEVAL_QUERY"))[0], dtype=np.float32)
+        vector = np.asarray((await self._embed([content]))[0], dtype=np.float32)
+        self._query_vectors[query] = vector
+        if len(self._query_vectors) > QUERY_CACHE_SIZE:
+            self._query_vectors.popitem(last=False)
+        return vector
 
     async def image(self, image: Image.Image) -> np.ndarray:
         return np.asarray((await self.images([image]))[0], dtype=np.float32)
@@ -124,7 +139,7 @@ class GeminiEmbedder:
         if not batch:
             return np.empty((0, self._dimensions), dtype=np.float32)
         contents = [types.Content(parts=[_image_part(image)]) for image in batch]
-        vectors = await self._embed(contents, "RETRIEVAL_DOCUMENT")
+        vectors = await self._embed(contents)
         if len(vectors) != len(batch):
             raise EmbedderUnavailable(f"Gemini returned {len(vectors)} embeddings for {len(batch)} images.")
         return vectors

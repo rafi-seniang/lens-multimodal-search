@@ -50,6 +50,22 @@ Additional checks on the 242-photograph index (`gemini-embedding-2`):
   accounting invoice document`, `knitting wool sweater and needles`), maximum cosine scores range from `0.2554` to
   `0.3162`. Setting `MIN_PICTURE_SCORE=0.35` sits near the midpoint of the `0.0656` gap (`[0.3162, 0.3818]`).
 
+### Query prefix (15 Nov 2026)
+
+Google's guide says `gemini-embedding-2` takes no `task_type` and recommends writing the task into the query
+(`task: search result | query: ...`), with pictures sent bare. Both were measured on the archive above with the same
+picture vectors (`scripts/eval_search.py`, which also prints the cutoff from the seven queries with no match):
+
+| Query sent as | `picture` P@10 | Hit@1 | Lowest real query, top score | Highest no-match score | Gap |
+|---|---|---|---|---|---|
+| the words alone | 0.987 | 1.000 | 0.3818 | 0.3162 | 0.066 |
+| `task: search result | query: ` + the words | 0.982 | 1.000 | 0.6297 | 0.5897 | 0.040 |
+
+The prefix ranks the same and leaves less room between a real query and one with no match, so queries go bare. The
+earlier runs passed `task_type`, and their numbers are identical to the bare run, so the model ignored it and it is
+gone. Text query vectors are kept in memory (the last 1,024), so the page's default query and its examples do not
+spend the free tier's daily embedding quota on every visit.
+
 ### Previous Met archive baseline: `gemini-embedding-2` (`scripts/eval_search.py`, 274 photographs, 57 queries, 15 Nov 2026)
 
 `scripts/fetch_collection.py` previously pulled CC0 photographs across twenty subjects from The Met Open Access API,
