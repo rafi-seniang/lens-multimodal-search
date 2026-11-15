@@ -250,9 +250,7 @@ class Lens:
                 raise NotFound(f"No photograph {photograph_id} in the collection.")
             target = self.collection.photographs[position]
             if target.origin != "upload":
-                raise InvalidAction(
-                    "Archive photographs from The Met are read-only. Only uploaded pictures can be deleted."
-                )
+                raise InvalidAction("Archive photographs are read-only. Only uploaded pictures can be deleted.")
             if self._store is not None:
                 await self._store.delete(photograph_id)
             self.collection.remove(photograph_id)

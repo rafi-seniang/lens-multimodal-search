@@ -47,8 +47,8 @@ class Settings(BaseSettings):
     fusion_k: int = Field(default=60, gt=0)
     picture_weight: float = Field(default=0.8, gt=0, le=1)
     # Minimum cosine similarity returned in picture mode (0 disables filtering)
-    # Calibrated from eval negatives (max 0.3334) vs positives (min 0.3393) on gemini-embedding-2.
-    min_picture_score: float = Field(default=0.335, ge=-1, le=1)
+    # Calibrated from eval negatives (max 0.3162) vs positives (min 0.3818) on gemini-embedding-2.
+    min_picture_score: float = Field(default=0.35, ge=-1, le=1)
     # Largest picture accepted per file and max files per ingest request
     max_upload_bytes: int = Field(default=8_000_000, gt=0)
     max_batch_uploads: int = Field(default=12, gt=0)

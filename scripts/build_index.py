@@ -4,6 +4,7 @@ Run from the repository root after scripts/fetch_collection.py: python scripts/b
 """
 
 import asyncio
+import hashlib
 import time
 from pathlib import Path
 
@@ -23,25 +24,67 @@ from app.platform.resources import load_secrets
 from config.settings import get_settings
 
 
+def _image_digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _prepare_cache(
+    images_dir: Path, photographs: list[Photograph], cache_dir: Path
+) -> tuple[list[np.ndarray | None], list[tuple[int, Path, Path]], int]:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    vectors_by_index: list[np.ndarray | None] = [None] * len(photographs)
+    pending: list[tuple[int, Path, Path]] = []
+    cached_hits = 0
+    for idx, photograph in enumerate(photographs):
+        image_path = images_dir / photograph.image
+        cache_file = cache_dir / f"{_image_digest(image_path)}.npy"
+        if cache_file.is_file():
+            vectors_by_index[idx] = np.load(cache_file).astype(np.float32)
+            cached_hits += 1
+        else:
+            pending.append((idx, cache_file, image_path))
+    return vectors_by_index, pending, cached_hits
+
+
+def _open_rgb_batch(chunk: list[tuple[int, Path, Path]]) -> list[Image.Image]:
+    opened: list[Image.Image] = []
+    for _, _, image_path in chunk:
+        with Image.open(image_path) as raw:
+            opened.append(raw.convert("RGB"))
+    return opened
+
+
 async def _embed_all(
-    embedder: GeminiEmbedder, images_dir: Path, photographs: list[Photograph], batch_size: int
+    embedder: GeminiEmbedder,
+    images_dir: Path,
+    photographs: list[Photograph],
+    batch_size: int,
+    cache_dir: Path,
 ) -> np.ndarray:
-    batches: list[np.ndarray] = []
-    for start in range(0, len(photographs), batch_size):
-        batch = photographs[start : start + batch_size]
-        opened = [Image.open(images_dir / photograph.image).convert("RGB") for photograph in batch]
+    vectors_by_index, pending, cached_hits = _prepare_cache(images_dir, photographs, cache_dir)
+    if cached_hits:
+        print(f"Loaded {cached_hits}/{len(photographs)} cached vectors from {cache_dir}")
+
+    for start in range(0, len(pending), batch_size):
+        chunk = pending[start : start + batch_size]
+        opened = _open_rgb_batch(chunk)
         for attempt in range(6):
             try:
-                batches.append(await embedder.images(opened))
+                batch_vectors = await embedder.images(opened)
                 break
             except EmbedderUnavailable as error:
                 if "429" not in error.detail or attempt == 5:
                     raise
                 wait_seconds = 15 * (attempt + 1)
-                print(f"Rate-limited at {start}/{len(photographs)}, waiting {wait_seconds}s...")
+                print(f"Rate-limited at {start}/{len(pending)}, waiting {wait_seconds}s...")
                 await asyncio.sleep(wait_seconds)
-        print(f"Embedded {min(start + batch_size, len(photographs))}/{len(photographs)}")
-    return np.concatenate(batches)
+        for (idx, cache_file, _), vector in zip(chunk, batch_vectors, strict=True):
+            vec = vector.astype(np.float32)
+            np.save(cache_file, vec)
+            vectors_by_index[idx] = vec
+        print(f"Embedded {cached_hits + min(start + batch_size, len(pending))}/{len(photographs)}")
+
+    return np.stack([v for v in vectors_by_index if v is not None]).astype(np.float32)
 
 
 async def main() -> None:
@@ -49,6 +92,9 @@ async def main() -> None:
     load_secrets(settings)
     photographs = read_photographs(settings.collection_dir)
     images_dir = settings.collection_dir / "images"
+    cache_dir = (
+        settings.collection_dir / ".cache" / "vectors" / f"{settings.embedding_model}_{settings.embedding_dimensions}"
+    )
     embedder = GeminiEmbedder(
         model_id=settings.embedding_model,
         dimensions=settings.embedding_dimensions,
@@ -56,7 +102,7 @@ async def main() -> None:
     )
     started = time.perf_counter()
     try:
-        vectors = await _embed_all(embedder, images_dir, photographs, settings.index_batch_size)
+        vectors = await _embed_all(embedder, images_dir, photographs, settings.index_batch_size, cache_dir)
         write_index(settings.collection_dir, settings.embedding_model, photographs, vectors)
 
         uploads_path = settings.collection_dir / UPLOADS_FILE
@@ -68,7 +114,7 @@ async def main() -> None:
             ]
             if uploads:
                 print(f"Re-embedding {len(uploads)} existing uploads...")
-                upload_vectors = await _embed_all(embedder, images_dir, uploads, settings.index_batch_size)
+                upload_vectors = await _embed_all(embedder, images_dir, uploads, settings.index_batch_size, cache_dir)
                 np.save(settings.collection_dir / UPLOAD_VECTORS_FILE, upload_vectors.astype(np.float32))
     finally:
         await embedder.aclose()

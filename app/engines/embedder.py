@@ -36,6 +36,19 @@ def _normalize(vectors: np.ndarray) -> np.ndarray:
     return np.asarray(vectors / np.maximum(norms, 1e-12), dtype=np.float32)
 
 
+def _load_api_keys() -> list[str]:
+    """Read primary and backup Gemini API keys from env, supporting comma-separated lists."""
+    raw_values = [
+        os.environ.get(name, "")
+        for name in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GEMINI_API_KEYS")
+    ]
+    keys = [part.strip() for raw in raw_values for part in raw.split(",") if part.strip()]
+    unique = list(dict.fromkeys(keys))
+    if not unique:
+        raise SystemExit("GEMINI_API_KEY is empty in the secrets file or environment. Lens needs it.")
+    return unique
+
+
 class GeminiEmbedder:
     """Async Gemini Embedding 2 client. Vectors return unit-length so dot product equals cosine similarity."""
 
@@ -46,9 +59,7 @@ class GeminiEmbedder:
         timeout_seconds: float = 30.0,
         http_async_client: httpx.AsyncClient | None = None,
     ) -> None:
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-        if not api_key:
-            raise SystemExit("GEMINI_API_KEY is empty in the secrets file or environment. Lens needs it.")
+        api_keys = _load_api_keys()
         self.name = model_id
         self._model = model_id
         self._dimensions = dimensions
@@ -57,30 +68,19 @@ class GeminiEmbedder:
             initial_delay=0.5,
             max_delay=2.0,
         )
-        self._client = genai.Client(
-            api_key=api_key,
-            http_options=types.HttpOptions(
-                timeout=int(timeout_seconds * 1000),
-                retry_options=retry,
-                httpx_async_client=http_async_client,
-            ),
+        http_options = types.HttpOptions(
+            timeout=int(timeout_seconds * 1000),
+            retry_options=retry,
+            httpx_async_client=http_async_client,
         )
+        self._clients = [genai.Client(api_key=key, http_options=http_options) for key in api_keys]
+        self._active_index = 0
 
     async def aclose(self) -> None:
-        await self._client.aio.aclose()
+        for client in self._clients:
+            await client.aio.aclose()
 
-    async def _embed(self, contents: Any, task_type: str) -> np.ndarray:
-        try:
-            response = await self._client.aio.models.embed_content(
-                model=self._model,
-                contents=contents,
-                config=types.EmbedContentConfig(output_dimensionality=self._dimensions, task_type=task_type),
-            )
-        except APIError as error:
-            detail = (error.message or "")[:300]
-            raise EmbedderUnavailable(f"Gemini ({self._model}) answered {error.code}: {detail}") from error
-        except httpx.HTTPError as error:
-            raise EmbedderUnavailable(f"Gemini did not answer: {type(error).__name__}") from error
+    def _to_vectors(self, response: types.EmbedContentResponse) -> np.ndarray:
         embeddings = response.embeddings or []
         if not embeddings:
             raise EmbedderUnavailable("Gemini returned no embeddings.")
@@ -90,6 +90,28 @@ class GeminiEmbedder:
                 f"Gemini returned embeddings with shape {matrix.shape}, expected (*, {self._dimensions})."
             )
         return _normalize(matrix)
+
+    async def _embed(self, contents: Any, task_type: str) -> np.ndarray:
+        count = len(self._clients)
+        for offset in range(count):
+            index = (self._active_index + offset) % count
+            client = self._clients[index]
+            try:
+                response = await client.aio.models.embed_content(
+                    model=self._model,
+                    contents=contents,
+                    config=types.EmbedContentConfig(output_dimensionality=self._dimensions, task_type=task_type),
+                )
+            except APIError as error:
+                detail = (error.message or "")[:300]
+                if error.code == 429 and offset + 1 < count:
+                    continue
+                raise EmbedderUnavailable(f"Gemini ({self._model}) answered {error.code}: {detail}") from error
+            except httpx.HTTPError as error:
+                raise EmbedderUnavailable(f"Gemini did not answer: {type(error).__name__}") from error
+            self._active_index = index
+            return self._to_vectors(response)
+        raise EmbedderUnavailable(f"Gemini ({self._model}) exhausted all API keys.")
 
     async def text(self, query: str) -> np.ndarray:
         content = types.Content(parts=[types.Part.from_text(text=query)])

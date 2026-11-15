@@ -128,7 +128,7 @@ class TypesensePhotographStore:
             )
             existing_model = str((info.get("metadata") or {}).get("model", ""))
             existing_docs = int(info.get("num_documents", 0))
-            if existing_dim != dimensions or (model and existing_model != model):
+            if existing_dim != dimensions or (model and existing_model != model) or existing_docs != len(photographs):
                 await self._call("DELETE", f"/collections/{self._collection}")
                 needs_create = True
 

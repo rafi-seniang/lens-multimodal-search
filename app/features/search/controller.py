@@ -82,6 +82,6 @@ class SearchController:
             subjects=subject_list,
             model=self._lens.model,
             dimensions=self._lens.collection.dimensions,
-            source="The Metropolitan Museum of Art (CC0) and local uploads",
-            licence="CC0 1.0 and user uploads",
+            source="Wikimedia Commons & NASA (open licence) and local uploads",
+            licence="CC0 / CC BY / Public Domain and user uploads",
         )
