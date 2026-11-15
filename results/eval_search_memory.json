@@ -1,6 +1,6 @@
 {
- "photographs": 274,
- "queries": 57,
+ "photographs": 242,
+ "queries": 60,
  "model": "gemini-embedding-2",
  "store": "in-memory",
  "picture_mode_against_exact_search": {
@@ -9,74 +9,72 @@
  },
  "by_mode_and_style": {
   "caption/description": {
-   "precision_at_10": 0.168,
-   "hit_at_1": 0.316,
-   "reciprocal_rank": 0.426
+   "precision_at_10": 0.275,
+   "hit_at_1": 0.45,
+   "reciprocal_rank": 0.527
   },
   "caption/english": {
-   "precision_at_10": 0.379,
-   "hit_at_1": 0.842,
-   "reciprocal_rank": 0.868
+   "precision_at_10": 0.66,
+   "hit_at_1": 0.9,
+   "reciprocal_rank": 0.942
   },
   "caption/indonesian": {
-   "precision_at_10": 0.0,
-   "hit_at_1": 0.0,
-   "reciprocal_rank": 0.0
+   "precision_at_10": 0.35,
+   "hit_at_1": 0.6,
+   "reciprocal_rank": 0.625
   },
   "hybrid/description": {
-   "precision_at_10": 0.726,
-   "hit_at_1": 0.947,
-   "reciprocal_rank": 0.974
+   "precision_at_10": 0.855,
+   "hit_at_1": 0.95,
+   "reciprocal_rank": 0.975
   },
   "hybrid/english": {
-   "precision_at_10": 0.858,
+   "precision_at_10": 0.945,
    "hit_at_1": 1.0,
    "reciprocal_rank": 1.0
   },
   "hybrid/indonesian": {
-   "precision_at_10": 0.8,
-   "hit_at_1": 0.895,
-   "reciprocal_rank": 0.947
+   "precision_at_10": 0.98,
+   "hit_at_1": 1.0,
+   "reciprocal_rank": 1.0
   },
   "picture/description": {
-   "precision_at_10": 0.805,
-   "hit_at_1": 0.947,
-   "reciprocal_rank": 0.974
+   "precision_at_10": 0.985,
+   "hit_at_1": 1.0,
+   "reciprocal_rank": 1.0
   },
   "picture/english": {
-   "precision_at_10": 0.847,
-   "hit_at_1": 0.947,
-   "reciprocal_rank": 0.974
+   "precision_at_10": 0.99,
+   "hit_at_1": 1.0,
+   "reciprocal_rank": 1.0
   },
   "picture/indonesian": {
-   "precision_at_10": 0.8,
-   "hit_at_1": 0.895,
-   "reciprocal_rank": 0.947
+   "precision_at_10": 0.985,
+   "hit_at_1": 1.0,
+   "reciprocal_rank": 1.0
   }
  },
  "overall": {
   "caption": {
-   "precision_at_10": 0.182,
-   "hit_at_1": 0.386,
-   "reciprocal_rank": 0.431,
+   "precision_at_10": 0.428,
+   "hit_at_1": 0.65,
+   "reciprocal_rank": 0.698,
    "ms": 0.3
   },
   "hybrid": {
-   "precision_at_10": 0.795,
-   "hit_at_1": 0.947,
-   "reciprocal_rank": 0.974,
-   "ms": 402.7
+   "precision_at_10": 0.927,
+   "hit_at_1": 0.983,
+   "reciprocal_rank": 0.992,
+   "ms": 379.4
   },
   "picture": {
-   "precision_at_10": 0.818,
-   "hit_at_1": 0.93,
-   "reciprocal_rank": 0.965,
-   "ms": 406.6
+   "precision_at_10": 0.987,
+   "hit_at_1": 1.0,
+   "reciprocal_rank": 1.0,
+   "ms": 380.7
   }
  },
- "subjects_left_out": [
-  "Bicycles"
- ],
- "random_precision": 0.054,
- "picture_to_picture_shared_subject_at_5": 0.707
+ "subjects_left_out": [],
+ "random_precision": 0.049,
+ "picture_to_picture_shared_subject_at_5": 0.964
 }

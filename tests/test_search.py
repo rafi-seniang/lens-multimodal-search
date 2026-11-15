@@ -249,6 +249,36 @@ async def test_gemini_embedder_encodes_text_and_images(monkeypatch: pytest.Monke
         await failing.aclose()
 
 
+async def test_embedder_rotates_to_backup_key_on_429(monkeypatch: pytest.MonkeyPatch) -> None:
+    import numpy as np
+
+    from app.engines.embedder import GeminiEmbedder
+
+    monkeypatch.setenv("GEMINI_API_KEY", "key-one, key-two")
+    monkeypatch.setenv("GEMINI_API_KEY_3", "key-three")
+    monkeypatch.delenv("GEMINI_API_KEY_2", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEYS", raising=False)
+    used_keys: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        key = request.headers.get("x-goog-api-key", "")
+        used_keys.append(key)
+        if key == "key-one":
+            return httpx.Response(429, json={"error": {"code": 429, "message": "daily quota exceeded"}})
+        return httpx.Response(200, json={"embeddings": [{"values": [0.0, 3.0, 4.0]}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as mock_http:
+        embedder = GeminiEmbedder(model_id="gemini-embedding-2", dimensions=3, http_async_client=mock_http)
+        vec1 = await embedder.text("surfing")
+        vec2 = await embedder.text("volcano")
+        await embedder.aclose()
+
+    assert np.allclose(vec1, np.array([0.0, 0.6, 0.8], dtype=np.float32))
+    assert np.allclose(vec2, np.array([0.0, 0.6, 0.8], dtype=np.float32))
+    # First call tries key-one -> 429 -> key-two -> 200; second call stays on key-two
+    assert used_keys == ["key-one", "key-two", "key-two"]
+
+
 async def test_typesense_bootstrap_recreates_collection_when_model_changes() -> None:
     from app.features.search.typesense_store import TypesensePhotographStore
     from tests.conftest import PHOTOGRAPHS, VECTORS

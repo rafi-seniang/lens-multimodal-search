@@ -1,60 +1,60 @@
-{"subject": "Dogs", "style": "english", "query": "dog"}
-{"subject": "Dogs", "style": "indonesian", "query": "anjing"}
-{"subject": "Dogs", "style": "description", "query": "a pet hound sitting for its portrait"}
-{"subject": "Horses", "style": "english", "query": "horse"}
-{"subject": "Horses", "style": "indonesian", "query": "kuda"}
-{"subject": "Horses", "style": "description", "query": "a rider in the saddle or a carriage pulled along the road"}
-{"subject": "Cats", "style": "english", "query": "cat"}
-{"subject": "Cats", "style": "indonesian", "query": "kucing"}
-{"subject": "Cats", "style": "description", "query": "a kitten curled up on a cushion"}
-{"subject": "Boats", "style": "english", "query": "boat"}
-{"subject": "Boats", "style": "indonesian", "query": "perahu"}
-{"subject": "Boats", "style": "description", "query": "small craft moored at the water's edge"}
-{"subject": "Bridges", "style": "english", "query": "bridge"}
-{"subject": "Bridges", "style": "indonesian", "query": "jembatan"}
-{"subject": "Bridges", "style": "description", "query": "arches spanning a river from bank to bank"}
-{"subject": "Trees", "style": "english", "query": "tree"}
-{"subject": "Trees", "style": "indonesian", "query": "pohon"}
-{"subject": "Trees", "style": "description", "query": "a tall trunk with spreading branches and leaves"}
-{"subject": "Flowers", "style": "english", "query": "flowers"}
-{"subject": "Flowers", "style": "indonesian", "query": "bunga"}
-{"subject": "Flowers", "style": "description", "query": "a vase of blossoms and petals"}
-{"subject": "Mountains", "style": "english", "query": "mountain"}
-{"subject": "Mountains", "style": "indonesian", "query": "gunung"}
-{"subject": "Mountains", "style": "description", "query": "rocky peaks rising above a valley"}
-{"subject": "Children", "style": "english", "query": "children"}
-{"subject": "Children", "style": "indonesian", "query": "anak-anak"}
-{"subject": "Children", "style": "description", "query": "young boys and girls playing together"}
-{"subject": "Waterfalls", "style": "english", "query": "waterfall"}
-{"subject": "Waterfalls", "style": "indonesian", "query": "air terjun"}
-{"subject": "Waterfalls", "style": "description", "query": "water tumbling over a cliff into a pool"}
-{"subject": "Churches", "style": "english", "query": "church"}
-{"subject": "Churches", "style": "indonesian", "query": "gereja"}
-{"subject": "Churches", "style": "description", "query": "a steeple and the stone front of a place of worship"}
-{"subject": "Streets", "style": "english", "query": "street"}
-{"subject": "Streets", "style": "indonesian", "query": "jalan kota"}
-{"subject": "Streets", "style": "description", "query": "shop fronts and pavements in a busy town"}
-{"subject": "Trains", "style": "english", "query": "train"}
-{"subject": "Trains", "style": "indonesian", "query": "kereta api"}
-{"subject": "Trains", "style": "description", "query": "a steam locomotive on the railway tracks"}
-{"subject": "Birds", "style": "english", "query": "bird"}
-{"subject": "Birds", "style": "indonesian", "query": "burung"}
-{"subject": "Birds", "style": "description", "query": "feathered wings perched on a branch"}
-{"subject": "Ruins", "style": "english", "query": "ruins"}
-{"subject": "Ruins", "style": "indonesian", "query": "reruntuhan"}
-{"subject": "Ruins", "style": "description", "query": "broken columns and crumbling ancient walls"}
-{"subject": "Soldiers", "style": "english", "query": "soldier"}
-{"subject": "Soldiers", "style": "indonesian", "query": "tentara"}
-{"subject": "Soldiers", "style": "description", "query": "men in uniform with rifles"}
-{"subject": "Musicians", "style": "english", "query": "musician"}
-{"subject": "Musicians", "style": "indonesian", "query": "pemusik"}
-{"subject": "Musicians", "style": "description", "query": "someone playing a violin, a guitar or a drum"}
-{"subject": "Beaches", "style": "english", "query": "beach"}
-{"subject": "Beaches", "style": "indonesian", "query": "pantai"}
-{"subject": "Beaches", "style": "description", "query": "sand and waves along the seaside"}
-{"subject": "Bicycles", "style": "english", "query": "bicycle"}
-{"subject": "Bicycles", "style": "indonesian", "query": "sepeda"}
-{"subject": "Bicycles", "style": "description", "query": "someone riding on two wheels with pedals"}
-{"subject": "Hats", "style": "english", "query": "hat"}
-{"subject": "Hats", "style": "indonesian", "query": "topi"}
-{"subject": "Hats", "style": "description", "query": "a person wearing a bonnet or a top hat"}
+{"subject": "Surfing", "style": "english", "query": "surfing"}
+{"subject": "Surfing", "style": "indonesian", "query": "selancar di ombak"}
+{"subject": "Surfing", "style": "description", "query": "riding a breaking ocean wave on a board"}
+{"subject": "Bungee Jumping", "style": "english", "query": "bungee jumping"}
+{"subject": "Bungee Jumping", "style": "indonesian", "query": "lompat bungee"}
+{"subject": "Bungee Jumping", "style": "description", "query": "leaping headfirst from a high bridge tied to an elastic cord"}
+{"subject": "Rock Climbing", "style": "english", "query": "rock climbing"}
+{"subject": "Rock Climbing", "style": "indonesian", "query": "panjat tebing"}
+{"subject": "Rock Climbing", "style": "description", "query": "scaling a steep stone cliff with ropes and harnesses"}
+{"subject": "Scuba Diving", "style": "english", "query": "scuba diving"}
+{"subject": "Scuba Diving", "style": "indonesian", "query": "menyelam di laut"}
+{"subject": "Scuba Diving", "style": "description", "query": "underwater diver with air tank exploring ocean life"}
+{"subject": "Yellow Sports Cars", "style": "english", "query": "yellow sports car"}
+{"subject": "Yellow Sports Cars", "style": "indonesian", "query": "mobil sport kuning"}
+{"subject": "Yellow Sports Cars", "style": "description", "query": "sleek bright yellow coupe on asphalt"}
+{"subject": "Formula 1", "style": "english", "query": "Formula 1 race car"}
+{"subject": "Formula 1", "style": "indonesian", "query": "mobil balap Formula 1"}
+{"subject": "Formula 1", "style": "description", "query": "open-wheel motorsport racer speeding around an asphalt circuit"}
+{"subject": "Robotics", "style": "english", "query": "robotic arm and humanoid robot"}
+{"subject": "Robotics", "style": "indonesian", "query": "robot dan lengan mekanik"}
+{"subject": "Robotics", "style": "description", "query": "articulated mechanical joints and actuators built for automation"}
+{"subject": "Helicopters", "style": "english", "query": "helicopter in flight"}
+{"subject": "Helicopters", "style": "indonesian", "query": "helikopter terbang"}
+{"subject": "Helicopters", "style": "description", "query": "rotorcraft hovering in the sky with spinning blades"}
+{"subject": "Planet Mars", "style": "english", "query": "planet Mars"}
+{"subject": "Planet Mars", "style": "indonesian", "query": "planet Mars"}
+{"subject": "Planet Mars", "style": "description", "query": "red dusty rocky terrain explored by a planetary rover"}
+{"subject": "Deep Space Nebulae", "style": "english", "query": "colorful space nebula"}
+{"subject": "Deep Space Nebulae", "style": "indonesian", "query": "nebula luar angkasa"}
+{"subject": "Deep Space Nebulae", "style": "description", "query": "glowing clouds of cosmic gas and young stars in deep universe"}
+{"subject": "Volcanoes", "style": "english", "query": "erupting volcano with lava"}
+{"subject": "Volcanoes", "style": "indonesian", "query": "gunung berapi meletus"}
+{"subject": "Volcanoes", "style": "description", "query": "molten orange rock fountain spraying from a glowing crater"}
+{"subject": "Aurora Borealis", "style": "english", "query": "aurora borealis northern lights"}
+{"subject": "Aurora Borealis", "style": "indonesian", "query": "cahaya aurora di langit malam"}
+{"subject": "Aurora Borealis", "style": "description", "query": "bright green ribbons glowing across the arctic night sky"}
+{"subject": "Burj Khalifa", "style": "english", "query": "Burj Khalifa"}
+{"subject": "Burj Khalifa", "style": "indonesian", "query": "gedung pencakar langit Burj Khalifa"}
+{"subject": "Burj Khalifa", "style": "description", "query": "the tallest needle-shaped glass tower rising above Dubai"}
+{"subject": "Torii Gates", "style": "english", "query": "Japanese torii gate"}
+{"subject": "Torii Gates", "style": "indonesian", "query": "gerbang torii Jepang"}
+{"subject": "Torii Gates", "style": "description", "query": "vermilion wooden shrine archway along a temple path or bay"}
+{"subject": "Hot Air Balloons", "style": "english", "query": "colorful hot air balloons"}
+{"subject": "Hot Air Balloons", "style": "indonesian", "query": "balon udara warna-warni"}
+{"subject": "Hot Air Balloons", "style": "description", "query": "wicker baskets lifted into the morning sky beneath vibrant fabric domes"}
+{"subject": "Neon Night Streets", "style": "english", "query": "neon street at night"}
+{"subject": "Neon Night Streets", "style": "indonesian", "query": "jalan malam penuh lampu neon"}
+{"subject": "Neon Night Streets", "style": "description", "query": "crowded city alley glowing with colorful illuminated signs after dark"}
+{"subject": "Macaws & Toucans", "style": "english", "query": "macaw parrot and toucan"}
+{"subject": "Macaws & Toucans", "style": "indonesian", "query": "burung kakatua macaw dan tukan"}
+{"subject": "Macaws & Toucans", "style": "description", "query": "bright rainforest bird with vibrant feathers or large orange beak"}
+{"subject": "Tigers", "style": "english", "query": "tiger"}
+{"subject": "Tigers", "style": "indonesian", "query": "harimau"}
+{"subject": "Tigers", "style": "description", "query": "large striped orange big cat striding through greenery"}
+{"subject": "Coral Reefs", "style": "english", "query": "coral reef and clownfish"}
+{"subject": "Coral Reefs", "style": "indonesian", "query": "terumbu karang dan ikan badut"}
+{"subject": "Coral Reefs", "style": "description", "query": "bright tropical fish swimming beside sea anemones beneath warm water"}
+{"subject": "Sushi & Ramen", "style": "english", "query": "sushi platter and ramen"}
+{"subject": "Sushi & Ramen", "style": "indonesian", "query": "sushi dan semangkuk ramen"}
+{"subject": "Sushi & Ramen", "style": "description", "query": "sliced raw fish on vinegared rice or noodles in rich broth"}

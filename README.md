@@ -1,13 +1,14 @@
 # Lens
 
 Searches a photograph archive by words (in English or Indonesian), by an uploaded picture, or from a photograph
-already in the archive. Built on 271 CC0 public-domain photographs from The Metropolitan Museum of Art plus uploaded
-photographs.
+already in the archive. Built on 239 open-licence photographs curated from Wikimedia Commons and NASA across 20
+distinct modern subjects, plus uploaded photographs.
 
 - **Embed** every photograph with `gemini-embedding-2` (Google AI Studio API, `output_dimensionality=768`, unit-normalised
   L2 vectors), which maps text and images into one 768-dimensional space without a local GPU (`docs/adr/0004-gemini-embedding-2.md`).
-  Keeping local `google/embeddinggemma-2` behind a toggle (Option B) is noted there as a future consideration.
-- **Rank** text queries in three modes: `picture` (cosine vector search in Typesense with `MIN_PICTURE_SCORE=0.335`),
+  `GeminiEmbedder` rotates automatically across backup keys (`GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`,
+  or comma-separated keys) on HTTP 429 quota responses.
+- **Rank** text queries in three modes: `picture` (cosine vector search in Typesense with `MIN_PICTURE_SCORE=0.35`),
   `caption` (BM25 over title, photographer and date), and `hybrid` (weighted reciprocal rank fusion, `0.8` picture and
   `0.2` caption).
 - **Find neighbours** of any photograph or uploaded image by cosine similarity in Typesense (`VECTOR_SEARCH_EF=200`).
@@ -17,15 +18,42 @@ screen in the lab frontend.
 
 ## Measured
 
-### `gemini-embedding-2` (`scripts/eval_search.py`, 274 photographs, 57 queries, 15 Nov 2026)
+### Curated 20-subject colourful archive (`gemini-embedding-2`, 242 photographs, 60 queries, 15 Nov 2026)
 
-`scripts/fetch_collection.py` pulls CC0 photographs across twenty subjects from The Met Open Access API, caching
-metadata and images under `../../assets/lens`. `Bicycles` returned one photograph and is excluded from the 10-hit
-evaluation (`MIN_PHOTOGRAPHS = 5`), leaving 19 subjects and 57 queries in `data/eval_queries.jsonl`: 19 short English
-nouns (`dog`, `locomotive`), 19 Indonesian translations (`anjing`, `kereta api`), and 19 English descriptions that
-avoid the subject word (`a kitten curled up on a cushion`, `smoke rising from a steam engine`). A hit counts as
-relevant when The Met tagged the photograph with that subject. Random precision@10 is `0.054`. All runs below use
-`MIN_PICTURE_SCORE=0.0` for unclipped top-10 ranking metrics.
+`scripts/fetch_collection.py` curates photographs across 20 visually distinct subjects (`Surfing`, `Bungee Jumping`,
+`Rock Climbing`, `Scuba Diving`, `Yellow Sports Cars`, `Formula 1`, `Robotics`, `Helicopters`, `Planet Mars`,
+`Deep Space Nebulae`, `Volcanoes`, `Aurora Borealis`, `Burj Khalifa`, `Torii Gates`, `Hot Air Balloons`,
+`Neon Night Streets`, `Macaws & Toucans`, `Tigers`, `Coral Reefs`, and `Sushi & Ramen`) from Wikimedia Commons and
+NASA, storing 239 verified photographs plus 3 existing uploads under `../../assets/lens`. `data/eval_queries.jsonl`
+contains all 20 subjects x 3 query styles (`english`, `indonesian`, and `description`, 60 queries total). Random
+precision@10 is `0.049`. All ranking runs below use `MIN_PICTURE_SCORE=0.0` for unclipped top-10 metrics.
+
+Exact search (`STORE_BACKEND=memory`, BM25 over title, photographer and date):
+
+| Mode | Overall P@10 | Hit@1 | MRR | English P@10 / Hit@1 | Indonesian P@10 / Hit@1 | Description P@10 / Hit@1 | Median time |
+|---|---|---|---|---|---|---|---|
+| `caption` (BM25) | 0.428 | 0.650 | 0.698 | 0.660 / 0.900 | 0.350 / 0.600 | 0.275 / 0.450 | 0.3 ms |
+| `hybrid` (`0.8` picture) | 0.927 | 0.983 | 0.992 | 0.945 / 1.000 | 0.980 / 1.000 | 0.855 / 0.950 | 379.4 ms |
+| `picture` (vector only) | 0.987 | 1.000 | 1.000 | 0.990 / 1.000 | 0.985 / 1.000 | 0.985 / 1.000 | 380.7 ms |
+
+Picture-to-picture search (`GET /v1/photographs/{id}/similar`): `0.964` of each photograph's 5 nearest neighbours
+share a subject tag.
+
+Additional checks on the 242-photograph index (`gemini-embedding-2`):
+
+- **Uploaded images:** `plane` (`0.3986`) and `pesawat terbang komersial` (`0.4075`) rank the uploaded airliner first.
+  `bumblebee` (`0.4578`) and `robot kuning transformers` (`0.4739`) rank the uploaded robot first.
+- **Score cutoff (`MIN_PICTURE_SCORE=0.35`):** across the 60 positive queries in `data/eval_queries.jsonl`, the lowest
+  top-1 cosine score is `0.3818` (`wicker baskets lifted into the morning sky beneath vibrant fabric domes`), with the
+  next lowest at `0.4104`. Across 7 unrelated negative queries (`mechanical computer keyboard`, `medical stethoscope on
+  hospital desk`, `pembayaran tagihan QRIS`, `smartphone layar sentuh retak`, `wooden chess pieces on board`, `printed
+  accounting invoice document`, `knitting wool sweater and needles`), maximum cosine scores range from `0.2554` to
+  `0.3162`. Setting `MIN_PICTURE_SCORE=0.35` sits near the midpoint of the `0.0656` gap (`[0.3162, 0.3818]`).
+
+### Previous Met archive baseline: `gemini-embedding-2` (`scripts/eval_search.py`, 274 photographs, 57 queries, 15 Nov 2026)
+
+`scripts/fetch_collection.py` previously pulled CC0 photographs across twenty subjects from The Met Open Access API,
+with `Bicycles` excluded (`MIN_PHOTOGRAPHS = 5`), leaving 19 subjects and 57 queries (`random_precision = 0.054`):
 
 Exact search (`STORE_BACKEND=memory`, BM25 over title, photographer and date):
 
@@ -147,19 +175,13 @@ Each API key / caller IP gets `RATE_LIMIT_PER_MINUTE` requests a minute plus `DA
 
 ## Checks
 
-`ruff check . && ruff format --check . && mypy && pytest -q` (21 tests with a deterministic 3D fake embedder, no GPU or
-network). Run `python scripts/eval_search.py` with `PYTHONPATH=.` after `scripts/build_index.py`. It searches
-through the configured `STORE_BACKEND` and writes `results/eval_search_typesense.json` or
-`results/eval_search_memory.json`.
+`ruff check . && ruff format --check . && mypy && pytest -q` (22 tests with a deterministic 3D fake embedder and mock transports, no GPU or network). Run `python scripts/eval_search.py` with `PYTHONPATH=.` after `scripts/build_index.py`. It searches through the configured `STORE_BACKEND` and writes `results/eval_search_typesense.json` or `results/eval_search_memory.json`.
 
 ## Known limits
 
-- The Met's subject tags are incomplete (a street view with a horse is not always tagged `Horses`), so precision@10
-  understates true visual relevance across all modes.
-- In `hybrid` mode, Typesense's caption BM25 branch can surface weak rank-fusion hits (`score ~ 0.06`) when common English
-  words (`on`, `plate`) appear in artwork titles even when `picture` mode returns 0 hits below `MIN_PICTURE_SCORE`.
-- Query and upload embeddings call Google AI Studio's `gemini-embedding-2` free tier (~400 ms per query over HTTP and
-  subject to free-tier RPM/TPM limits and Google free-tier data terms, which the UI discloses before upload).
+- Query and upload embeddings call Google AI Studio's `gemini-embedding-2` free tier (~381 ms per query over HTTP and
+  subject to free-tier RPM/RPD limits and Google free-tier data terms, which the UI discloses before upload). Key
+  rotation across `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, and `GEMINI_API_KEY_3` fails over on HTTP 429 responses.
 - Option A removes `torch` and `sentence-transformers` from Lens (`lens-test` slim image: 693 MB disk / 159 MB content).
   Restoring `google/embeddinggemma-2` behind an `EMBEDDING_PROVIDER` setting (Option B) is tracked in
   `docs/adr/0004-gemini-embedding-2.md` for offline or private-image deployments.
