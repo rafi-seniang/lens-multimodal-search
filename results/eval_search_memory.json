@@ -1,7 +1,7 @@
 {
  "photographs": 274,
  "queries": 57,
- "model": "google/embeddinggemma-2",
+ "model": "gemini-embedding-2",
  "store": "in-memory",
  "picture_mode_against_exact_search": {
   "top_10_shared_with_exact": 1.0,
@@ -24,34 +24,34 @@
    "reciprocal_rank": 0.0
   },
   "hybrid/description": {
-   "precision_at_10": 0.721,
-   "hit_at_1": 1.0,
-   "reciprocal_rank": 1.0
+   "precision_at_10": 0.726,
+   "hit_at_1": 0.947,
+   "reciprocal_rank": 0.974
   },
   "hybrid/english": {
-   "precision_at_10": 0.853,
+   "precision_at_10": 0.858,
    "hit_at_1": 1.0,
    "reciprocal_rank": 1.0
   },
   "hybrid/indonesian": {
-   "precision_at_10": 0.826,
-   "hit_at_1": 1.0,
-   "reciprocal_rank": 1.0
+   "precision_at_10": 0.8,
+   "hit_at_1": 0.895,
+   "reciprocal_rank": 0.947
   },
   "picture/description": {
-   "precision_at_10": 0.789,
-   "hit_at_1": 1.0,
-   "reciprocal_rank": 1.0
+   "precision_at_10": 0.805,
+   "hit_at_1": 0.947,
+   "reciprocal_rank": 0.974
   },
   "picture/english": {
-   "precision_at_10": 0.837,
+   "precision_at_10": 0.847,
    "hit_at_1": 0.947,
    "reciprocal_rank": 0.974
   },
   "picture/indonesian": {
-   "precision_at_10": 0.826,
-   "hit_at_1": 1.0,
-   "reciprocal_rank": 1.0
+   "precision_at_10": 0.8,
+   "hit_at_1": 0.895,
+   "reciprocal_rank": 0.947
   }
  },
  "overall": {
@@ -59,24 +59,24 @@
    "precision_at_10": 0.182,
    "hit_at_1": 0.386,
    "reciprocal_rank": 0.431,
-   "ms": 0.5
+   "ms": 0.3
   },
   "hybrid": {
-   "precision_at_10": 0.8,
-   "hit_at_1": 1.0,
-   "reciprocal_rank": 1.0,
-   "ms": 123.9
+   "precision_at_10": 0.795,
+   "hit_at_1": 0.947,
+   "reciprocal_rank": 0.974,
+   "ms": 402.7
   },
   "picture": {
    "precision_at_10": 0.818,
-   "hit_at_1": 0.982,
-   "reciprocal_rank": 0.991,
-   "ms": 124.0
+   "hit_at_1": 0.93,
+   "reciprocal_rank": 0.965,
+   "ms": 406.6
   }
  },
  "subjects_left_out": [
   "Bicycles"
  ],
  "random_precision": 0.054,
- "picture_to_picture_shared_subject_at_5": 0.737
+ "picture_to_picture_shared_subject_at_5": 0.707
 }

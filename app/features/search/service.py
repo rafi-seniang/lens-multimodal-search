@@ -40,6 +40,7 @@ class Lens:
         keyword: KeywordIndex,
         fusion_k: int,
         picture_weight: float = 0.8,
+        min_picture_score: float = 0.0,
         store: TypesensePhotographStore | None = None,
         collection_dir: Path | None = None,
     ) -> None:
@@ -48,6 +49,7 @@ class Lens:
         self._keyword = keyword
         self._fusion_k = fusion_k
         self._picture_weight = picture_weight
+        self._min_picture_score = min_picture_score
         self._store = store
         self._collection_dir = collection_dir
         self._write_lock = asyncio.Lock()
@@ -78,9 +80,11 @@ class Lens:
         mode: str,
         scores: np.ndarray,
         caption_scores: np.ndarray,
+        picture_scores: np.ndarray | None,
         limit: int,
         origin: OriginFilter,
         started: float,
+        apply_cutoff: bool = True,
     ) -> SearchResult:
         allowed = self._allowed_positions(origin)
         if len(allowed) == 0:
@@ -88,6 +92,7 @@ class Lens:
                 query=query, mode=mode, took_ms=round((time.perf_counter() - started) * 1000, 1), hits=[]
             )
         sliced_scores = scores[allowed]
+        cutoff = self._min_picture_score if apply_cutoff and self._min_picture_score > 0 else None
         hits = [
             Hit(
                 photograph=self.collection.photographs[int(allowed[local_pos])],
@@ -95,7 +100,12 @@ class Lens:
                 in_caption=bool(caption_scores[int(allowed[local_pos])] > 0),
             )
             for local_pos in top_positions(sliced_scores, limit)
-            if sliced_scores[local_pos] > 0 or mode != "caption"
+            if (sliced_scores[local_pos] > 0 or mode != "caption")
+            and (
+                cutoff is None
+                or caption_scores[int(allowed[local_pos])] > 0
+                or (picture_scores is not None and picture_scores[int(allowed[local_pos])] >= cutoff)
+            )
         ]
         return SearchResult(query=query, mode=mode, took_ms=round((time.perf_counter() - started) * 1000, 1), hits=hits)
 
@@ -115,26 +125,29 @@ class Lens:
                 limit=limit,
                 origin=origin,
                 caption_ids=caption_ids,
+                min_picture_score=self._min_picture_score,
             )
             return SearchResult(
                 query=query, mode=mode, took_ms=round((time.perf_counter() - started) * 1000, 1), hits=hits
             )
 
         if mode == "caption":
-            return self._memory_result(query, mode, caption_scores, caption_scores, limit, origin, started)
+            return self._memory_result(query, mode, caption_scores, caption_scores, None, limit, origin, started)
         picture_scores = self.collection.vectors @ await self._embedder.text(query)
         if mode == "picture":
-            return self._memory_result(query, mode, picture_scores, caption_scores, limit, origin, started)
+            return self._memory_result(
+                query, mode, picture_scores, caption_scores, picture_scores, limit, origin, started
+            )
         # Weighted reciprocal rank fusion: a strong caption match lifts a top picture, weak function words do not
         fused = self._picture_weight / (self._fusion_k + ranks(picture_scores))
         fused += np.where(caption_scores > 0, (1 - self._picture_weight) / (self._fusion_k + ranks(caption_scores)), 0)
-        return self._memory_result(query, mode, fused, caption_scores, limit, origin, started)
+        return self._memory_result(query, mode, fused, caption_scores, picture_scores, limit, origin, started)
 
     async def search_image(self, image: Image.Image, limit: int, origin: OriginFilter = "all") -> SearchResult:
         started = time.perf_counter()
         vector = await self._embedder.image(image)
         if self._store is not None:
-            hits = await self._store.search_vector(vector, limit, origin)
+            hits = await self._store.search_vector(vector, limit, origin, min_picture_score=self._min_picture_score)
             return SearchResult(
                 query="an uploaded picture",
                 mode="picture",
@@ -143,7 +156,7 @@ class Lens:
             )
         scores = self.collection.vectors @ vector
         return self._memory_result(
-            "an uploaded picture", "picture", scores, np.zeros_like(scores), limit, origin, started
+            "an uploaded picture", "picture", scores, np.zeros_like(scores), scores, limit, origin, started
         )
 
     async def similar(self, photograph_id: str, limit: int) -> SearchResult:
@@ -162,7 +175,17 @@ class Lens:
         scores = self.collection.vectors @ self.collection.vectors[position]
         scores[position] = -np.inf  # a photograph is always most like itself
         title = self.collection.photographs[position].title
-        return self._memory_result(f"like {title}", "picture", scores, np.zeros_like(scores), limit, "all", started)
+        return self._memory_result(
+            f"like {title}",
+            "picture",
+            scores,
+            np.zeros_like(scores),
+            scores,
+            limit,
+            "all",
+            started,
+            apply_cutoff=False,
+        )
 
     async def list_photographs(self, origin: OriginFilter, limit: int, tag: str | None = None) -> SearchResult:
         started = time.perf_counter()

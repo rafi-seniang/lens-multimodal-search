@@ -44,6 +44,10 @@ class StoreUnavailable(AppError):
     status, title = 503, "Vector store unavailable"
 
 
+class EmbedderUnavailable(AppError):
+    status, title = 503, "Embedding backend unavailable"
+
+
 class RateLimited(AppError):
     status, title = 429, "Too many requests"
 

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     api_keys: SecretStr = SecretStr("")
     # Browser origins allowed to call the API (the lab frontend in development and preview)
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:4173"]
-    # The personal secrets file with HF_TOKEN, if the model has to be downloaded. Empty when it is cached.
+    # Optional secrets file with GEMINI_API_KEY. Leave empty when env vars are passed directly.
     secrets_env_path: Path | None = None
 
     # Vector store backend: typesense (Docker on 8108) or memory (unit tests and offline eval)
@@ -33,11 +33,12 @@ class Settings(BaseSettings):
 
     # The collection: images/, collection.jsonl, uploads.jsonl, and the vector files
     collection_dir: Path = Path("../../assets/lens")
-    # One model for text and images (Apache 2.0). bfloat16 on the GPU, float32 on the CPU.
-    embedding_model: str = "google/embeddinggemma-2"
-    device: str = "cuda"
-    # Pictures embedded per forward pass when building the index
-    index_batch_size: int = Field(default=8, gt=0)
+    # Hosted Gemini Embedding 2 model for text and images in one normalized 768-dim space
+    embedding_model: str = "gemini-embedding-2"
+    embedding_dimensions: int = Field(default=768, gt=0)
+    gemini_timeout_seconds: float = Field(default=30, gt=0)
+    # Pictures embedded per API call when building the index
+    index_batch_size: int = Field(default=10, gt=0)
 
     # Results per search when the caller does not say
     default_results: int = Field(default=24, gt=0)
@@ -45,6 +46,9 @@ class Settings(BaseSettings):
     # Reciprocal rank fusion constant and picture share (0.8 keeps function words in descriptions from outvoting images)
     fusion_k: int = Field(default=60, gt=0)
     picture_weight: float = Field(default=0.8, gt=0, le=1)
+    # Minimum cosine similarity returned in picture mode (0 disables filtering)
+    # Calibrated from eval negatives (max 0.3334) vs positives (min 0.3393) on gemini-embedding-2.
+    min_picture_score: float = Field(default=0.335, ge=-1, le=1)
     # Largest picture accepted per file and max files per ingest request
     max_upload_bytes: int = Field(default=8_000_000, gt=0)
     max_batch_uploads: int = Field(default=12, gt=0)
@@ -54,6 +58,11 @@ class Settings(BaseSettings):
     redis_timeout_seconds: float = Field(default=2, gt=0)
     # Requests per caller (API key, or client address without one) per minute on /v1
     rate_limit_per_minute: int = Field(default=120, gt=0)
+    # Optional UTC daily caps (0 disables caps for local runs and tests)
+    daily_requests_per_caller: int = Field(default=0, ge=0)
+    daily_requests_total: int = Field(default=0, ge=0)
+    daily_uploads_per_caller: int = Field(default=0, ge=0)
+    daily_uploads_total: int = Field(default=0, ge=0)
 
     @property
     def api_key_list(self) -> list[str]:

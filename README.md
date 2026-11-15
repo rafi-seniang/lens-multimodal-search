@@ -1,52 +1,76 @@
 # Lens
 
 Searches a photograph archive by words (in English or Indonesian), by an uploaded picture, or from a photograph
-already in the archive. Built on 271 CC0 public-domain photographs from The Metropolitan Museum of Art.
+already in the archive. Built on 271 CC0 public-domain photographs from The Metropolitan Museum of Art plus uploaded
+photographs.
 
-- **Embed** every photograph offline with `google/embeddinggemma-2` (Apache 2.0, `bfloat16` on GPU), which maps text
-  and images into one 768-dimensional unit-normalised vector space.
-- **Rank** text queries in three modes: `picture` (dot product against image vectors with the model card's retrieval
-  prefix), `caption` (BM25 over title, photographer and date), and `hybrid` (weighted reciprocal rank fusion, `0.8`
-  picture and `0.2` caption).
-- **Find neighbours** of any photograph or uploaded image by cosine similarity against the in-memory NumPy matrix.
+- **Embed** every photograph with `gemini-embedding-2` (Google AI Studio API, `output_dimensionality=768`, unit-normalised
+  L2 vectors), which maps text and images into one 768-dimensional space without a local GPU (`docs/adr/0004-gemini-embedding-2.md`).
+  Keeping local `google/embeddinggemma-2` behind a toggle (Option B) is noted there as a future consideration.
+- **Rank** text queries in three modes: `picture` (cosine vector search in Typesense with `MIN_PICTURE_SCORE=0.335`),
+  `caption` (BM25 over title, photographer and date), and `hybrid` (weighted reciprocal rank fusion, `0.8` picture and
+  `0.2` caption).
+- **Find neighbours** of any photograph or uploaded image by cosine similarity in Typesense (`VECTOR_SEARCH_EF=200`).
 
 Part of the AI Lab: it keeps the Lab contract (`/health`, `/meta`, OpenAPI, CORS for the lab frontend) and has a
 screen in the lab frontend.
 
-## Measured (`scripts/eval_search.py`, 271 photographs, 57 queries, 25 Oct 2026)
+## Measured
+
+### `gemini-embedding-2` (`scripts/eval_search.py`, 274 photographs, 57 queries, 15 Nov 2026)
 
 `scripts/fetch_collection.py` pulls CC0 photographs across twenty subjects from The Met Open Access API, caching
 metadata and images under `../../assets/lens`. `Bicycles` returned one photograph and is excluded from the 10-hit
 evaluation (`MIN_PHOTOGRAPHS = 5`), leaving 19 subjects and 57 queries in `data/eval_queries.jsonl`: 19 short English
 nouns (`dog`, `locomotive`), 19 Indonesian translations (`anjing`, `kereta api`), and 19 English descriptions that
 avoid the subject word (`a kitten curled up on a cushion`, `smoke rising from a steam engine`). A hit counts as
-relevant when The Met tagged the photograph with that subject. Random precision@10 is `0.054`.
+relevant when The Met tagged the photograph with that subject. Random precision@10 is `0.054`. All runs below use
+`MIN_PICTURE_SCORE=0.0` for unclipped top-10 ranking metrics.
+
+Exact search (`STORE_BACKEND=memory`, BM25 over title, photographer and date):
+
+| Mode | Overall P@10 | Hit@1 | MRR | English P@10 / Hit@1 | Indonesian P@10 / Hit@1 | Description P@10 / Hit@1 | Median time |
+|---|---|---|---|---|---|---|---|
+| `caption` (BM25) | 0.182 | 0.386 | 0.431 | 0.379 / 0.842 | 0.000 / 0.000 | 0.168 / 0.316 | 0.3 ms |
+| `hybrid` (`0.8` picture) | 0.795 | 0.947 | 0.974 | 0.858 / 1.000 | 0.800 / 0.895 | 0.726 / 0.947 | 402.7 ms |
+| `picture` (vector only) | 0.818 | 0.930 | 0.965 | 0.847 / 0.947 | 0.800 / 0.895 | 0.805 / 0.947 | 406.6 ms |
+
+With `STORE_BACKEND=typesense` (`VECTOR_SEARCH_EF=200`), `picture` mode shares `1.0` of its top 10 and `1.0` of its top
+1 with exact search (`P@10 = 0.818`, `Hit@1 = 0.930`, `MRR = 0.965`, median `434.6 ms` including Windows localhost Docker
+Desktop overhead on top of the Gemini API embedding call). Picture-to-picture search
+(`GET /v1/photographs/{id}/similar`): `0.707` of each photograph's 5 nearest neighbours share a Met subject tag.
+
+Additional checks on the 274-photograph index (`gemini-embedding-2`):
+
+- **Harder Indonesian sentences (10 queries across 10 subjects):** `avg Hit@1 = 1.000`, `avg P@10 = 0.830`, top-1 cosine
+  scores from `0.3643` (`seekor kucing meringkuk di atas bantal`) to `0.4665` (`seekor anjing duduk untuk difoto`).
+- **Uploaded images:** `plane` (`0.3986`) and `pesawat terbang komersial` (`0.4075`) rank the uploaded airliner first.
+  `bumblebee` (`0.4578`) and `robot kuning transformers` (`0.4739`) rank the uploaded robot first.
+- **Score cutoff (`MIN_PICTURE_SCORE=0.335`):** across the 57 positive queries in `data/eval_queries.jsonl`, the lowest
+  top-1 cosine is `0.3393` (`someone riding on two wheels with pedals`). Across 7 unrelated queries (`spaceship`,
+  `sushi platter on a wooden plate`, `mechanical computer keyboard`, `pembayaran tagihan QRIS`,
+  `smartphone layar sentuh retak`, `astronot berjalan di permukaan bulan`, `pesawat luar angkasa menembus galaksi`),
+  maximum cosine scores range from `0.2596` to `0.3334`. Setting `MIN_PICTURE_SCORE=0.335` returns 0 hits for all 7
+  unrelated queries in `picture` mode while keeping all 57 evaluation queries and all 10 Indonesian sentence queries
+  above threshold.
+
+### Previous baseline: `google/embeddinggemma-2` (271 photographs, 57 queries, 25 Oct 2026)
+
+Preserved for comparison across model switches (`STORE_BACKEND=memory`, local RTX 5050):
 
 | Mode | Overall P@10 | Hit@1 | MRR | English P@10 / Hit@1 | Indonesian P@10 / Hit@1 | Description P@10 / Hit@1 | Median time |
 |---|---|---|---|---|---|---|---|
 | `caption` (BM25) | 0.179 | 0.386 | 0.431 | 0.379 / 0.842 | 0.000 / 0.000 | 0.158 / 0.316 | 0.3 ms |
-| `hybrid` (`0.8` picture, the default) | 0.796 | 0.982 | 0.991 | 0.853 / 1.000 | 0.826 / 1.000 | 0.711 / 0.947 | 69.2 ms |
+| `hybrid` (`0.8` picture) | 0.796 | 0.982 | 0.991 | 0.853 / 1.000 | 0.826 / 1.000 | 0.711 / 0.947 | 69.2 ms |
 | `picture` (vector only) | 0.818 | 0.982 | 0.991 | 0.837 / 0.947 | 0.826 / 1.000 | 0.789 / 1.000 | 67.0 ms |
 
-Picture-to-picture search (`GET /v1/photographs/{id}/similar`): `0.745` of each photograph's 5 nearest neighbours share
-at least one of its Met subject tags.
-
-What this says:
-
-- **Captions miss everything unlabelled or in another language.** Many archival prints are titled `Untitled` or named
-  for a place, and every caption is in English. BM25 gets `0.000` on Indonesian queries and `0.158` P@10 on sentence
-  descriptions.
-- **Indonesian matches English without translation.** `EmbeddingGemma 2` scores `0.826` P@10 and `1.000` Hit@1 on
-  Indonesian queries, within `0.011` of English (`0.837` P@10).
-- **Why hybrid weights the picture at 0.8.** Equal-weight reciprocal rank fusion (`0.5` / `0.5`) gave `0.416` P@10 and
-  `0.737` Hit@1 on sentence descriptions, because common words (`in`, `on`, `at`) matched unrelated titles and RRF
-  treated any non-zero BM25 rank equally with the image rank. Weighting the picture at `0.8` lifts description P@10 to
-  `0.711` (Hit@1 `0.947`) while keeping `1.000` Hit@1 and `0.853` P@10 on English noun and title queries, where caption
-  matches help (`Brooklyn Bridge`). Pure `picture` mode remains higher (`0.789` P@10) when queries are full sentences.
+Picture-to-picture shared subject at 5 was `0.745` (`EmbeddingGemma 2`). At `271` photographs, both models reach
+`0.818` P@10 in `picture` mode, with `gemini-embedding-2` lifting description P@10 from `0.789` to `0.805` while
+running over HTTP without a GPU (~403 ms median vs `67.0 ms` local GPU).
 
 The table above is exact search over the NumPy vectors (`STORE_BACKEND=memory`), with BM25 over title, photographer and
 date. Through Typesense, caption matching also covers the Met subject tags, which are the evaluation's labels, so its
-caption and hybrid scores are not comparable and are not reported here.
+caption and hybrid scores are not comparable and are not reported for cross-model comparison.
 
 ## Typesense search width (`VECTOR_SEARCH_EF`)
 
@@ -69,17 +93,17 @@ also reports the agreement with exact search (`picture_mode_against_exact_search
 ## Run
 
 ```powershell
-# first time only: embed the 271 photographs (33 s, 1.98 GB peak GPU memory on the RTX 5050)
+# first time or after a model switch: embed the archive and any uploads into assets/lens
 $env:PYTHONPATH='.'; ..\..\.venv\Scripts\python.exe scripts\build_index.py
-# start Typesense 27.1 in Docker on port 8108, then start Lens on port 8030
+# start Typesense 27.1 and Redis 7.4 in Docker, then start Lens on port 8030
 docker compose up -d typesense redis
-copy .env.example .env
+copy .env.example .env   # set GEMINI_API_KEY in .env or SECRETS_ENV_PATH
 ..\..\.venv\Scripts\python.exe main.py                  # or: uvicorn main:app --port 8030
 ```
 
-At startup the service loads the index and `google/embeddinggemma-2` (~2.0 GB on the GPU), creates or syncs the
-`lens_photographs` collection in Typesense (`VECTOR_STORE=typesense`), and refuses to start if Typesense or the index is
-unreachable.
+At startup the service loads the index, creates the `GeminiEmbedder` client (requiring `GEMINI_API_KEY`), creates or
+rebuilds the `lens_photographs` collection in Typesense (`STORE_BACKEND=typesense`, checking stored model metadata),
+and refuses to start if Typesense, the index, or the key is missing or unreachable.
 
 ## Layout
 
@@ -90,29 +114,31 @@ in `app/platform`.
 main.py                     entry point
 config/                     settings (every environment value, with a comment) and JSON logging
 app/
-  bootstrap.py              the app factory: middleware, error handlers, /v1 behind the API key and the rate limit
-  platform/                 resources (model, Typesense, Redis, built once), dependencies, errors, middleware,
-                            security, rate_limit, redis
-  engines/                  EmbeddingGemma 2 (text and pictures in one space) and BM25 over captions
+  bootstrap.py              the app factory: middleware, error handlers, /v1 behind the API key and rate/daily limits
+  platform/                 resources (GeminiEmbedder, Typesense, Redis, built once), dependencies, errors,
+                            middleware, security, rate_limit, redis
+  engines/                  Gemini Embedding 2 client (text and images in one 768-dim space) and BM25 over captions
   features/
     search/                 router, controller (uploads, limits), service (Lens: picture, caption, hybrid),
                             typesense_store, collection (files on disk), schemas, dependencies
     health/                 /health and /meta
 scripts/                    fetch_collection, build_index, eval_search (run from the repository root with PYTHONPATH=.)
 tests/                      a deterministic 3D fake embedder, no GPU or network
+docs/adr/                   architecture decision records (0004 documents the switch to gemini-embedding-2)
 ```
 
-Each API key gets `RATE_LIMIT_PER_MINUTE` requests a minute on `/v1`, counted in Redis, then a 429 with
-`Retry-After`. Embedding a picture is the expensive call, so the limit keeps one client from holding the GPU.
+Each API key / caller IP gets `RATE_LIMIT_PER_MINUTE` requests a minute plus `DAILY_REQUESTS_PER_CALLER` /
+`DAILY_REQUESTS_TOTAL` daily request caps and `DAILY_UPLOADS_TOTAL` daily image-ingest caps counted in Redis, then a
+429 with `Retry-After`.
 
 ## API
 
 | Endpoint | What |
 |---|---|
-| `GET /v1/search?q=...&mode=picture&origin=all` | search by text in `picture` (pure Typesense vector search), `hybrid` or `caption` mode, filtered by `all`, `upload` or `met` |
+| `GET /v1/search?q=...&mode=picture&origin=all` | search by text in `picture` (Typesense vector search with `MIN_PICTURE_SCORE`), `hybrid` or `caption` mode, filtered by `all`, `upload` or `met` |
 | `POST /v1/search/image` | upload a JPEG, PNG or WebP and rank visually similar photographs in Typesense |
 | `GET /v1/photographs?origin=upload` | list recent photographs in the database, newest uploads first |
-| `POST /v1/photographs` | embed one or more uploaded images with `EmbeddingGemma 2` and index them into Typesense and local disk |
+| `POST /v1/photographs` | embed one or more uploaded images with `gemini-embedding-2` and index them into Typesense and local disk |
 | `DELETE /v1/photographs/{id}` | delete a user-uploaded image from Typesense and local disk |
 | `GET /v1/photographs/{id}/similar` | nearest photographs in the collection using stored vectors in Typesense |
 | `GET /v1/collection` | total, archive and uploaded counts, vector store name, subject counts, model and dimensions |
@@ -121,7 +147,7 @@ Each API key gets `RATE_LIMIT_PER_MINUTE` requests a minute on `/v1`, counted in
 
 ## Checks
 
-`ruff check . && ruff format --check . && mypy && pytest -q` (18 tests with a deterministic 3D fake embedder, no GPU or
+`ruff check . && ruff format --check . && mypy && pytest -q` (21 tests with a deterministic 3D fake embedder, no GPU or
 network). Run `python scripts/eval_search.py` with `PYTHONPATH=.` after `scripts/build_index.py`. It searches
 through the configured `STORE_BACKEND` and writes `results/eval_search_typesense.json` or
 `results/eval_search_memory.json`.
@@ -130,6 +156,10 @@ through the configured `STORE_BACKEND` and writes `results/eval_search_typesense
 
 - The Met's subject tags are incomplete (a street view with a horse is not always tagged `Horses`), so precision@10
   understates true visual relevance across all modes.
-- Both image and text towers stay in GPU memory (~2.0 GB) so uploaded-picture queries work alongside text queries.
-- All vectors sit in a single NumPy array in RAM, which fits archives up to a few hundred thousand images without
-  per-user metadata filters.
+- In `hybrid` mode, Typesense's caption BM25 branch can surface weak rank-fusion hits (`score ~ 0.06`) when common English
+  words (`on`, `plate`) appear in artwork titles even when `picture` mode returns 0 hits below `MIN_PICTURE_SCORE`.
+- Query and upload embeddings call Google AI Studio's `gemini-embedding-2` free tier (~400 ms per query over HTTP and
+  subject to free-tier RPM/TPM limits and Google free-tier data terms, which the UI discloses before upload).
+- Option A removes `torch` and `sentence-transformers` from Lens (`lens-test` slim image: 693 MB disk / 159 MB content).
+  Restoring `google/embeddinggemma-2` behind an `EMBEDDING_PROVIDER` setting (Option B) is tracked in
+  `docs/adr/0004-gemini-embedding-2.md` for offline or private-image deployments.

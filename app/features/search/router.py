@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Form, Query, UploadFile
 from app.features.search.controller import SearchController
 from app.features.search.dependencies import get_search_controller
 from app.features.search.schemas import CollectionInfo, DeleteResult, IngestResult, Mode, OriginFilter, SearchResult
+from app.platform.dependencies import enforce_upload_limit
 
 router = APIRouter(tags=["search"])
 Controller = Annotated[SearchController, Depends(get_search_controller)]
@@ -44,14 +45,14 @@ async def list_photographs(
     return await controller.list_photographs(origin, tag, limit)
 
 
-@router.post("/photographs", status_code=201)
+@router.post("/photographs", status_code=201, dependencies=[Depends(enforce_upload_limit)])
 async def add_photographs(
     controller: Controller,
     files: list[UploadFile],
     title: Annotated[str | None, Form()] = None,
     tags: Annotated[str, Form()] = "",
 ) -> IngestResult:
-    """Embed one or more pictures with EmbeddingGemma 2 and index them into Typesense."""
+    """Embed one or more pictures with Gemini Embedding 2 and index them into Typesense."""
     return await controller.add_photographs(files, title, tags)
 
 

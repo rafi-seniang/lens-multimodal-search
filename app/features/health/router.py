@@ -22,7 +22,7 @@ async def meta(resources: Annotated[Resources, Depends(get_resources)]) -> Servi
     return ServiceMeta(
         id="lens",
         name="Lens",
-        summary="Semantic image search with EmbeddingGemma 2 and Typesense, plus custom picture indexing.",
+        summary="Semantic image search with Gemini Embedding 2 and Typesense, plus custom picture indexing.",
         version=VERSION,
         engine=resources.lens.model,
         own_ui_path="/docs",

@@ -83,6 +83,7 @@ def lens(collection_dir: Path) -> Lens:
         FakeEmbedder(),
         KeywordIndex(collection.photographs),
         fusion_k=60,
+        min_picture_score=0.0,
         collection_dir=collection_dir,
     )
 

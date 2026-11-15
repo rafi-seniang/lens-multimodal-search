@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
-from app.engines.embedder import GemmaEmbedder
+from app.engines.embedder import GeminiEmbedder
 from app.engines.keyword import KeywordIndex
 from app.features.search.collection import load_collection
 from app.features.search.service import Lens
@@ -30,7 +30,7 @@ def load_secrets(settings: Settings) -> None:
     if settings.secrets_env_path:
         if not settings.secrets_env_path.is_file():
             raise RuntimeError(f"SECRETS_ENV_PATH points to a missing file: {settings.secrets_env_path}")
-        load_dotenv(settings.secrets_env_path, override=False)  # HF_TOKEN for a first download
+        load_dotenv(settings.secrets_env_path, override=False)  # GEMINI_API_KEY when not passed in env
 
 
 async def build_resources(settings: Settings) -> Resources:
@@ -44,13 +44,18 @@ async def build_resources(settings: Settings) -> Resources:
             collection_name=settings.typesense_collection,
             search_ef=settings.vector_search_ef,
         )
-        await store.bootstrap(collection.photographs, collection.vectors)
+        await store.bootstrap(collection.photographs, collection.vectors, model=settings.embedding_model)
     lens = Lens(
         collection=collection,
-        embedder=GemmaEmbedder(settings.embedding_model, settings.device),
+        embedder=GeminiEmbedder(
+            model_id=settings.embedding_model,
+            dimensions=settings.embedding_dimensions,
+            timeout_seconds=settings.gemini_timeout_seconds,
+        ),
         keyword=KeywordIndex(collection.photographs),
         fusion_k=settings.fusion_k,
         picture_weight=settings.picture_weight,
+        min_picture_score=settings.min_picture_score,
         store=store,
         collection_dir=settings.collection_dir,
     )
@@ -62,11 +67,15 @@ async def build_resources(settings: Settings) -> Resources:
 def lifespan(settings: Settings) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     @asynccontextmanager
     async def run(app: FastAPI) -> AsyncIterator[None]:
-        resources = await build_resources(settings)  # model and Typesense load here, before the first request
+        resources = await build_resources(settings)  # collection, Gemini client, and Typesense load here
+        app.state.settings = settings
         app.state.resources = resources
         try:
             yield
         finally:
+            close_embedder = getattr(resources.lens.embedder, "aclose", None)
+            if close_embedder is not None:
+                await close_embedder()
             if resources.store is not None:
                 await resources.store.close()
             if resources.redis is not None:
