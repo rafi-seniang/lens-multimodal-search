@@ -6,10 +6,9 @@ from typing import Any
 import httpx
 import numpy as np
 
-from app.features.search.schemas import Hit, Mode, OriginFilter, Photograph
+from app.features.search.schemas import Hit, OriginFilter, Photograph
 from app.platform.errors import NotFound, StoreUnavailable
 
-TEXT_FIELDS = "title,artist,date,tags"
 IMPORT_BATCH_SIZE = 100
 
 
@@ -38,23 +37,17 @@ def collection_schema(name: str, dimensions: int, model: str = "") -> dict[str, 
     return schema
 
 
-def origin_clause(origin: OriginFilter, tag: str | None = None) -> str:
-    clauses: list[str] = []
-    if origin != "all":
-        clauses.append(f"origin:=`{origin}`")
-    if tag:
-        clauses.append(f"tags:=`{tag}`")
-    return " && ".join(clauses)
+def origin_clause(origin: OriginFilter) -> str:
+    return "" if origin == "all" else f"origin:=`{origin}`"
 
 
 def format_vector(vector: np.ndarray) -> str:
     return ",".join(f"{float(value):.6f}" for value in vector)
 
 
-def vector_query(vector_text: str, k: int, ef: int, alpha: float | None = None) -> str:
+def vector_query(vector_text: str, k: int, ef: int) -> str:
     """Typesense's vector_query. `vector_text` is the formatted vector, or empty with `id:` to search by a document."""
-    hybrid_weight = "" if alpha is None else f", alpha:{alpha}"
-    return f"embedding:({vector_text}, k:{k}{hybrid_weight}, ef:{ef})"
+    return f"embedding:({vector_text}, k:{k}, ef:{ef})"
 
 
 def document_from_photograph(photograph: Photograph, vector: np.ndarray) -> dict[str, Any]:
@@ -63,18 +56,11 @@ def document_from_photograph(photograph: Photograph, vector: np.ndarray) -> dict
     return payload
 
 
-def hit_from_typesense(raw: dict[str, Any], mode: Mode, caption_ids: set[str]) -> Hit:
-    doc = raw["document"]
-    photograph = Photograph.model_validate(doc)
+def hit_from_typesense(raw: dict[str, Any]) -> Hit:
+    """A vector hit, scored as cosine similarity (Typesense returns the cosine distance)."""
     distance = raw.get("vector_distance")
-    if mode == "hybrid":
-        score = float(raw.get("hybrid_search_info", {}).get("rank_fusion_score", 0.0))
-    elif mode == "picture":
-        score = 1.0 - float(distance if distance is not None else 1.0)
-    else:
-        score = float(raw.get("text_match", 0))
-    in_caption = photograph.id in caption_ids if mode != "caption" else True
-    return Hit(photograph=photograph, score=round(score, 4), in_caption=in_caption)
+    score = 1.0 - float(distance if distance is not None else 1.0)
+    return Hit(photograph=Photograph.model_validate(raw["document"]), score=round(score, 4))
 
 
 class TypesensePhotographStore:
@@ -171,57 +157,6 @@ class TypesensePhotographStore:
         if response.status_code >= 400:
             raise StoreUnavailable(f"Typesense delete failed ({response.status_code}): {response.text[:240]}")
 
-    async def search_text(
-        self,
-        query: str,
-        vector: np.ndarray | None,
-        mode: Mode,
-        alpha: float,
-        limit: int,
-        origin: OriginFilter,
-        caption_ids: set[str],
-        min_picture_score: float = 0.0,
-    ) -> list[Hit]:
-        params: dict[str, Any] = {
-            "collection": self._collection,
-            "per_page": limit,
-            "exclude_fields": "embedding",
-        }
-        if mode == "caption":
-            params |= {"q": query, "query_by": TEXT_FIELDS}
-        elif mode == "picture":
-            assert vector is not None
-            params |= {"q": "*", "vector_query": vector_query(f"[{format_vector(vector)}]", limit, self._search_ef)}
-        else:
-            assert vector is not None
-            params |= {
-                "q": query,
-                "query_by": TEXT_FIELDS,
-                "vector_query": vector_query(f"[{format_vector(vector)}]", max(limit, 50), self._search_ef, alpha),
-            }
-        if clause := origin_clause(origin):
-            params["filter_by"] = clause
-
-        result = (await self._call("POST", "/multi_search", json={"searches": [params]})).json()["results"][0]
-        if "error" in result:
-            raise StoreUnavailable(f"Typesense search error: {result['error']}")
-        hits: list[Hit] = []
-        for raw in result.get("hits", []):
-            hit = hit_from_typesense(raw, mode, caption_ids)
-            if min_picture_score > 0 and mode != "caption":
-                distance = raw.get("vector_distance")
-                vector_score = 1.0 - float(distance) if distance is not None else None
-                if mode == "picture" and hit.score < min_picture_score:
-                    continue
-                if (
-                    mode == "hybrid"
-                    and not hit.in_caption
-                    and (vector_score is None or vector_score < min_picture_score)
-                ):
-                    continue
-            hits.append(hit)
-        return hits
-
     async def search_vector(
         self, vector: np.ndarray, limit: int, origin: OriginFilter, min_picture_score: float = 0.0
     ) -> list[Hit]:
@@ -238,7 +173,7 @@ class TypesensePhotographStore:
         result = (await self._call("POST", "/multi_search", json={"searches": [params]})).json()["results"][0]
         if "error" in result:
             raise StoreUnavailable(f"Typesense vector search error: {result['error']}")
-        hits = [hit_from_typesense(raw, "picture", set()) for raw in result.get("hits", [])]
+        hits = [hit_from_typesense(raw) for raw in result.get("hits", [])]
         if min_picture_score > 0:
             return [hit for hit in hits if hit.score >= min_picture_score]
         return hits
@@ -267,24 +202,17 @@ class TypesensePhotographStore:
         result = (await self._call("POST", "/multi_search", json={"searches": [params]})).json()["results"][0]
         if "error" in result:
             raise StoreUnavailable(f"Typesense neighbour search error: {result['error']}")
-        hits = [
-            hit_from_typesense(raw, "picture", set())
-            for raw in result.get("hits", [])
-            if raw["document"]["id"] != photograph_id
-        ]
+        hits = [hit_from_typesense(raw) for raw in result.get("hits", []) if raw["document"]["id"] != photograph_id]
         return title, hits[:limit]
 
-    async def list_recent(self, origin: OriginFilter, limit: int, tag: str | None = None) -> list[Hit]:
+    async def list_recent(self, origin: OriginFilter, limit: int) -> list[Hit]:
         params: dict[str, Any] = {
             "q": "*",
             "sort_by": "created_at:desc",
             "per_page": limit,
             "exclude_fields": "embedding",
         }
-        if clause := origin_clause(origin, tag):
+        if clause := origin_clause(origin):
             params["filter_by"] = clause
         result = (await self._call("GET", f"/collections/{self._collection}/documents/search", params=params)).json()
-        return [
-            Hit(photograph=Photograph.model_validate(raw["document"]), score=1.0, in_caption=False)
-            for raw in result.get("hits", [])
-        ]
+        return [Hit(photograph=Photograph.model_validate(raw["document"]), score=1.0) for raw in result.get("hits", [])]

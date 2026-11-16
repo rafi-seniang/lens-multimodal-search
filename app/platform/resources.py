@@ -9,7 +9,6 @@ from fastapi import FastAPI
 from redis.asyncio import Redis
 
 from app.engines.embedder import GeminiEmbedder
-from app.engines.keyword import KeywordIndex
 from app.features.search.collection import load_collection
 from app.features.search.service import Lens
 from app.features.search.typesense_store import TypesensePhotographStore
@@ -52,9 +51,6 @@ async def build_resources(settings: Settings) -> Resources:
             dimensions=settings.embedding_dimensions,
             timeout_seconds=settings.gemini_timeout_seconds,
         ),
-        keyword=KeywordIndex(collection.photographs),
-        fusion_k=settings.fusion_k,
-        picture_weight=settings.picture_weight,
         min_picture_score=settings.min_picture_score,
         store=store,
         collection_dir=settings.collection_dir,

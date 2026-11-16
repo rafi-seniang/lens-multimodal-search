@@ -1,6 +1,7 @@
-"""Measure the three search modes on data/eval_queries.jsonl, with the collection's subject tags as the labels.
+"""Measure search on data/eval_queries.jsonl, with the collection's subject tags as the labels.
 
-A photograph is relevant to a query when it carries the query's subject tag.
+A photograph is relevant to a query when it carries the query's subject tag. The tags are only labels for this
+measurement: search itself never reads them.
 Also measures picture-to-picture search (how many of a photograph's five nearest share one of its subjects) and the
 picture score cutoff: the lowest top score of a real query against the highest score of a query with no match.
 The search runs through the store the service uses (STORE_BACKEND): typesense is what the app serves, memory is exact.
@@ -10,12 +11,9 @@ Run from the repository root after scripts/build_index.py: python scripts/eval_s
 import asyncio
 import json
 from pathlib import Path
-from typing import get_args
 
 import pandas as pd
 
-from app.engines.keyword import KeywordIndex
-from app.features.search.schemas import Mode
 from app.features.search.service import Lens
 from app.platform.resources import build_resources
 from config.settings import get_settings
@@ -49,9 +47,6 @@ async def main() -> None:
         exact_lens = Lens(
             collection=collection,
             embedder=lens.embedder,
-            keyword=KeywordIndex(collection.photographs),
-            fusion_k=settings.fusion_k,
-            picture_weight=settings.picture_weight,
         )
         queries = pd.read_json(QUERIES, lines=True)
         per_subject = {
@@ -60,34 +55,28 @@ async def main() -> None:
         }
         thin = sorted(subject for subject, count in per_subject.items() if count < MIN_PHOTOGRAPHS)
         queries = queries[~queries["subject"].isin(thin)]
-        await lens.search_text("warm-up", "picture", 1)  # first call warms connections outside the timing
+        await lens.search_text("warm-up", 1)  # first call warms connections outside the timing
 
         rows = []
         exact_agreement = []
         for query in queries.itertuples():  # one query at a time so each timing is a single request's
-            served_ids: list[str] = []
-            for mode in get_args(Mode):
-                if mode != "caption":
-                    # Polite spacing stays well under the free-tier RPM cap without distorting per-query took_ms
-                    await asyncio.sleep(0.55)
-                result = await lens.search_text(query.query, mode, CUTOFF)
-                if mode == "picture":
-                    served_ids = [hit.photograph.id for hit in result.hits]
-                relevant = [query.subject in hit.photograph.tags for hit in result.hits]
-                first = relevant.index(True) + 1 if True in relevant else None
-                rows.append(
-                    {
-                        "style": query.style,
-                        "mode": mode,
-                        "precision_at_10": sum(relevant) / CUTOFF,
-                        "hit_at_1": float(bool(relevant) and relevant[0]),
-                        "reciprocal_rank": 1 / first if first else 0.0,
-                        "ms": result.took_ms,
-                    }
-                )
-            exact_ids = [
-                hit.photograph.id for hit in (await exact_lens.search_text(query.query, "picture", CUTOFF)).hits
-            ]
+            # Polite spacing stays well under the free-tier RPM cap without distorting per-query took_ms
+            await asyncio.sleep(0.55)
+            result = await lens.search_text(query.query, CUTOFF)
+            served_ids = [hit.photograph.id for hit in result.hits]
+            relevant = [query.subject in hit.photograph.tags for hit in result.hits]
+            first = relevant.index(True) + 1 if True in relevant else None
+            rows.append(
+                {
+                    "style": query.style,
+                    "mode": "picture",
+                    "precision_at_10": sum(relevant) / CUTOFF,
+                    "hit_at_1": float(bool(relevant) and relevant[0]),
+                    "reciprocal_rank": 1 / first if first else 0.0,
+                    "ms": result.took_ms,
+                }
+            )
+            exact_ids = [hit.photograph.id for hit in (await exact_lens.search_text(query.query, CUTOFF)).hits]
             exact_agreement.append(
                 {
                     "top_10_shared_with_exact": len(set(served_ids) & set(exact_ids)) / CUTOFF,

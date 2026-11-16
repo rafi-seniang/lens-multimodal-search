@@ -20,29 +20,17 @@ def png(colour: tuple[int, int, int]) -> bytes:
     return buffer.getvalue()
 
 
-async def test_a_picture_search_finds_what_the_caption_does_not_say(client: httpx.AsyncClient) -> None:
-    response = await client.get("/v1/search", params={"q": "anjing", "mode": "picture"})
+async def test_a_search_finds_what_the_caption_does_not_say(client: httpx.AsyncClient) -> None:
+    response = await client.get("/v1/search", params={"q": "anjing"})
     assert response.status_code == 200
     body = response.json()
-    assert ids(body)[:2] == ["1", "2"]
-    assert not any(hit["in_caption"] for hit in body["hits"])
-
-
-async def test_a_caption_search_returns_only_captions_with_a_query_word(client: httpx.AsyncClient) -> None:
-    body = (await client.get("/v1/search", params={"q": "dog", "mode": "caption"})).json()
-    assert ids(body) == ["1"]
-    assert body["hits"][0]["in_caption"] is True
-
-
-async def test_hybrid_puts_a_match_in_both_first_and_keeps_picture_matches(client: httpx.AsyncClient) -> None:
-    body = (await client.get("/v1/search", params={"q": "dog"})).json()
-    assert body["mode"] == "hybrid"
-    assert ids(body)[:2] == ["1", "2"]
-    assert [hit["in_caption"] for hit in body["hits"][:2]] == [True, False]
+    assert ids(body)[:2] == ["1", "2"]  # photograph 2 is titled "Untitled": only its picture shows a dog
+    assert body["mode"] == "picture"
+    assert set(body["hits"][0]) == {"photograph", "score"}
 
 
 async def test_results_are_capped_at_the_maximum(client: httpx.AsyncClient) -> None:
-    body = (await client.get("/v1/search", params={"q": "dog", "mode": "picture", "limit": 50})).json()
+    body = (await client.get("/v1/search", params={"q": "dog", "limit": 50})).json()
     assert len(body["hits"]) == 3
 
 
@@ -75,14 +63,14 @@ async def test_similar_to_an_unknown_photograph_is_404(client: httpx.AsyncClient
     assert response.headers["content-type"] == "application/problem+json"
 
 
-async def test_an_unknown_mode_is_422(client: httpx.AsyncClient) -> None:
-    assert (await client.get("/v1/search", params={"q": "dog", "mode": "fuzzy"})).status_code == 422
+async def test_an_empty_query_is_422(client: httpx.AsyncClient) -> None:
+    assert (await client.get("/v1/search", params={"q": ""})).status_code == 422
 
 
-async def test_the_collection_counts_photographs_per_subject(client: httpx.AsyncClient) -> None:
+async def test_the_collection_counts_photographs(client: httpx.AsyncClient) -> None:
     body = (await client.get("/v1/collection")).json()
-    assert body["photographs"] == 4
-    assert body["subjects"][0] == {"subject": "Dogs", "photographs": 2}
+    assert (body["photographs"], body["archive"], body["uploaded"]) == (4, 4, 0)
+    assert "subjects" not in body
     assert body["dimensions"] == 3
 
 
@@ -117,41 +105,29 @@ def test_a_missing_index_says_how_to_build_it(collection_dir: Path) -> None:
         load_collection(collection_dir, FAKE_MODEL)
 
 
-async def test_uploading_a_picture_indexes_it_for_text_and_origin_search(
+async def test_uploading_a_picture_indexes_it_for_search_without_a_title_or_tags(
     client: httpx.AsyncClient, collection_dir: Path
 ) -> None:
     response = await client.post(
         "/v1/photographs",
         files=[("files", ("my-boat.png", png((0, 0, 255)), "image/png"))],
-        data={"title": "Harbour skiff", "tags": "Boats, Custom"},
     )
     assert response.status_code == 201
     added = response.json()["added"]
     assert len(added) == 1
     upload_id = added[0]["id"]
     assert added[0]["origin"] == "upload"
+    assert added[0]["tags"] == []
     assert (collection_dir / "images" / added[0]["image"]).is_file()
 
     # Semantic search restricted to uploads finds the newly added boat picture
-    search_resp = await client.get("/v1/search", params={"q": "perahu", "mode": "picture", "origin": "upload"})
+    search_resp = await client.get("/v1/search", params={"q": "perahu", "origin": "upload"})
     assert search_resp.status_code == 200
     assert ids(search_resp.json()) == [upload_id]
 
     # Listing recent uploads returns it directly
     browse_resp = await client.get("/v1/photographs", params={"origin": "upload"})
     assert ids(browse_resp.json()) == [upload_id]
-
-    # Uploading without tags assigns the Untagged category and lets gallery browse by tag without search
-    untagged_resp = await client.post(
-        "/v1/photographs",
-        files=[("files", ("untagged.png", png((0, 255, 0)), "image/png"))],
-    )
-    assert untagged_resp.status_code == 201
-    untagged_added = untagged_resp.json()["added"][0]
-    assert untagged_added["tags"] == ["Untagged"]
-    untagged_browse = await client.get("/v1/photographs", params={"origin": "all", "tag": "Untagged"})
-    assert ids(untagged_browse.json()) == [untagged_added["id"]]
-    await client.delete(f"/v1/photographs/{untagged_added['id']}")
 
     # Deleting the uploaded picture removes it cleanly, while archive pictures stay protected
     assert (await client.delete("/v1/photographs/1")).status_code == 400
@@ -190,7 +166,7 @@ async def test_typesense_store_builds_pure_vector_and_neighbour_queries() -> Non
     store = TypesensePhotographStore(
         "http://typesense.local", "key", "lens_photographs", search_ef=200, client=mock_http
     )
-    hits = await store.search_text("anjing", DOG, "picture", 0.8, 5, "upload", set())
+    hits = await store.search_vector(DOG, 5, "upload")
     assert len(hits) == 1
     assert hits[0].score == 0.92
     assert seen_bodies[0]["searches"][0]["q"] == "*"
@@ -323,7 +299,6 @@ async def test_typesense_bootstrap_recreates_collection_when_model_changes() -> 
 
 
 async def test_picture_cutoff_and_daily_caps(collection_dir: Path) -> None:
-    from app.engines.keyword import KeywordIndex
     from app.features.search.collection import load_collection
     from app.features.search.service import Lens
     from config.settings import Settings
@@ -333,8 +308,6 @@ async def test_picture_cutoff_and_daily_caps(collection_dir: Path) -> None:
     lens_with_cutoff = Lens(
         collection,
         FakeEmbedder(),
-        KeywordIndex(collection.photographs),
-        fusion_k=60,
         min_picture_score=0.7,
         collection_dir=collection_dir,
     )
@@ -352,11 +325,11 @@ async def test_picture_cutoff_and_daily_caps(collection_dir: Path) -> None:
     async with httpx.AsyncClient(
         transport=transport, base_url="http://test", headers={"X-API-Key": "test-key"}
     ) as client:
-        unrelated = await client.get("/v1/search", params={"q": "spaceship", "mode": "picture"})
+        unrelated = await client.get("/v1/search", params={"q": "spaceship"})
         assert unrelated.status_code == 200
         assert unrelated.json()["hits"] == []
 
-        relevant = await client.get("/v1/search", params={"q": "dog", "mode": "picture"})
+        relevant = await client.get("/v1/search", params={"q": "dog"})
         assert ids(relevant.json()) == ["1", "2"]
 
         upload1 = await client.post("/v1/photographs", files=[("files", ("a.png", png((255, 0, 0)), "image/png"))])
