@@ -23,16 +23,13 @@ class Photograph(BaseModel):
     created_at: int = 0
 
 
-Mode = Literal["hybrid", "picture", "caption"]
 OriginFilter = Literal["all", "upload", "met"]
 
 
 class Hit(BaseModel):
     photograph: Photograph
-    # Cosine similarity for a picture search, text match for caption, rank fusion score for hybrid
+    # Cosine similarity between the query's vector and the picture's, 1.0 when browsing
     score: float
-    # Whether a query word is in the photograph's title, photographer or date
-    in_caption: bool
 
 
 class SearchResult(BaseModel):
@@ -53,17 +50,11 @@ class DeleteResult(BaseModel):
     total_photographs: int
 
 
-class SubjectCount(BaseModel):
-    subject: str
-    photographs: int
-
-
 class CollectionInfo(BaseModel):
     photographs: int
     uploaded: int
     archive: int
     vector_store: str
-    subjects: list[SubjectCount]
     model: str
     dimensions: int
     source: str

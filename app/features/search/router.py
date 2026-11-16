@@ -1,12 +1,12 @@
-"""Search by words, by an uploaded picture, or add pictures directly into the Typesense collection."""
+"""Search by words or by a picture, by meaning alone, and add pictures to the Typesense collection."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, Query, UploadFile
 
 from app.features.search.controller import SearchController
 from app.features.search.dependencies import get_search_controller
-from app.features.search.schemas import CollectionInfo, DeleteResult, IngestResult, Mode, OriginFilter, SearchResult
+from app.features.search.schemas import CollectionInfo, DeleteResult, IngestResult, OriginFilter, SearchResult
 from app.platform.dependencies import enforce_upload_limit
 
 router = APIRouter(tags=["search"])
@@ -18,12 +18,11 @@ Limit = Annotated[int | None, Query(ge=1, description="Results to return. The se
 async def search(
     controller: Controller,
     q: Annotated[str, Query(min_length=1, max_length=500, description="What to look for, in any language")],
-    mode: Mode = "hybrid",
     origin: OriginFilter = "all",
     limit: Limit = None,
 ) -> SearchResult:
-    """`picture` runs pure semantic vector search in Typesense, `caption` matches words, `hybrid` fuses both."""
-    return await controller.search_text(q, mode, origin, limit)
+    """Photographs whose picture means what the words say. Captions, titles and tags are never read."""
+    return await controller.search_text(q, origin, limit)
 
 
 @router.post("/search/image")
@@ -38,22 +37,19 @@ async def search_by_image(
 async def list_photographs(
     controller: Controller,
     origin: OriginFilter = "upload",
-    tag: Annotated[str | None, Query(max_length=120, description="Filter by subject or Untagged")] = None,
     limit: Limit = None,
 ) -> SearchResult:
-    """Recent photographs in the collection, filtered by origin (upload, met or all) and optional tag."""
-    return await controller.list_photographs(origin, tag, limit)
+    """Recent photographs in the collection, filtered by origin (upload, met or all)."""
+    return await controller.list_photographs(origin, limit)
 
 
 @router.post("/photographs", status_code=201, dependencies=[Depends(enforce_upload_limit)])
 async def add_photographs(
     controller: Controller,
     files: list[UploadFile],
-    title: Annotated[str | None, Form()] = None,
-    tags: Annotated[str, Form()] = "",
 ) -> IngestResult:
     """Embed one or more pictures with Gemini Embedding 2 and index them into Typesense."""
-    return await controller.add_photographs(files, title, tags)
+    return await controller.add_photographs(files)
 
 
 @router.delete("/photographs/{photograph_id}")

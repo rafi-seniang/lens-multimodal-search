@@ -8,9 +8,10 @@ distinct modern subjects, plus uploaded photographs.
   L2 vectors), which maps text and images into one 768-dimensional space without a local GPU (`docs/adr/0004-gemini-embedding-2.md`).
   `GeminiEmbedder` rotates automatically across backup keys (`GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`,
   or comma-separated keys) on HTTP 429 quota responses.
-- **Rank** text queries in three modes: `picture` (cosine vector search in Typesense with `MIN_PICTURE_SCORE=0.35`),
-  `caption` (BM25 over title, photographer and date), and `hybrid` (weighted reciprocal rank fusion, `0.8` picture and
-  `0.2` caption).
+- **Rank** by meaning alone: a query (words or a picture) becomes a vector and is compared with each picture's vector
+  by cosine similarity in Typesense, with `MIN_PICTURE_SCORE=0.35` as the "nothing found" line. No title, caption or
+  tag is read, and uploads take none. The `caption` (BM25) and `hybrid` modes were removed on 16 Nov 2026: the tables
+  below show `picture` alone beating both on every query style.
 - **Find neighbours** of any photograph or uploaded image by cosine similarity in Typesense (`VECTOR_SEARCH_EF=200`).
 
 Part of the AI Lab: it keeps the Lab contract (`/health`, `/meta`, OpenAPI, CORS for the lab frontend) and has a
@@ -28,7 +29,7 @@ NASA, storing 239 verified photographs plus 3 existing uploads under `../../asse
 contains all 20 subjects x 3 query styles (`english`, `indonesian`, and `description`, 60 queries total). Random
 precision@10 is `0.049`. All ranking runs below use `MIN_PICTURE_SCORE=0.0` for unclipped top-10 metrics.
 
-Exact search (`STORE_BACKEND=memory`, BM25 over title, photographer and date):
+Exact search (`STORE_BACKEND=memory`, BM25 over title, photographer and date, measured before those modes were removed):
 
 | Mode | Overall P@10 | Hit@1 | MRR | English P@10 / Hit@1 | Indonesian P@10 / Hit@1 | Description P@10 / Hit@1 | Median time |
 |---|---|---|---|---|---|---|---|
@@ -161,9 +162,9 @@ app/
   bootstrap.py              the app factory: middleware, error handlers, /v1 behind the API key and rate/daily limits
   platform/                 resources (GeminiEmbedder, Typesense, Redis, built once), dependencies, errors,
                             middleware, security, rate_limit, redis
-  engines/                  Gemini Embedding 2 client (text and images in one 768-dim space) and BM25 over captions
+  engines/                  Gemini Embedding 2 client (text and images in one 768-dim space)
   features/
-    search/                 router, controller (uploads, limits), service (Lens: picture, caption, hybrid),
+    search/                 router, controller (uploads, limits), service (Lens: vector search and uploads),
                             typesense_store, collection (files on disk), schemas, dependencies
     health/                 /health and /meta
 scripts/                    fetch_collection, build_index, eval_search (run from the repository root with PYTHONPATH=.)
@@ -179,19 +180,19 @@ Each API key / caller IP gets `RATE_LIMIT_PER_MINUTE` requests a minute plus `DA
 
 | Endpoint | What |
 |---|---|
-| `GET /v1/search?q=...&mode=picture&origin=all` | search by text in `picture` (Typesense vector search with `MIN_PICTURE_SCORE`), `hybrid` or `caption` mode, filtered by `all`, `upload` or `met` |
+| `GET /v1/search?q=...&origin=all` | search by text through Typesense vector search, cut at `MIN_PICTURE_SCORE`, filtered by `all`, `upload` or `met` |
 | `POST /v1/search/image` | upload a JPEG, PNG or WebP and rank visually similar photographs in Typesense |
 | `GET /v1/photographs?origin=upload` | list recent photographs in the database, newest uploads first |
-| `POST /v1/photographs` | embed one or more uploaded images with `gemini-embedding-2` and index them into Typesense and local disk |
+| `POST /v1/photographs` | embed one or more uploaded images (files only, no title or tags) with `gemini-embedding-2` and index them into Typesense and local disk |
 | `DELETE /v1/photographs/{id}` | delete a user-uploaded image from Typesense and local disk |
 | `GET /v1/photographs/{id}/similar` | nearest photographs in the collection using stored vectors in Typesense |
-| `GET /v1/collection` | total, archive and uploaded counts, vector store name, subject counts, model and dimensions |
+| `GET /v1/collection` | total, archive and uploaded counts, vector store name, model and dimensions |
 | `GET /images/{file}` | static photograph and user-upload files served beside the API |
 | `GET /health`, `GET /meta`, `GET /docs` | the Lab contract |
 
 ## Checks
 
-`ruff check . && ruff format --check . && mypy && pytest -q` (22 tests with a deterministic 3D fake embedder and mock transports, no GPU or network). Run `python scripts/eval_search.py` with `PYTHONPATH=.` after `scripts/build_index.py`. It searches through the configured `STORE_BACKEND` and writes `results/eval_search_typesense.json` or `results/eval_search_memory.json`.
+`ruff check . && ruff format --check . && mypy && pytest -q` (21 tests with a deterministic 3D fake embedder and mock transports, no GPU or network). Run `python scripts/eval_search.py` with `PYTHONPATH=.` after `scripts/build_index.py`. It searches through the configured `STORE_BACKEND` and writes `results/eval_search_typesense.json` or `results/eval_search_memory.json`.
 
 ## Known limits
 

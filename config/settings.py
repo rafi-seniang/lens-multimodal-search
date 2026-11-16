@@ -43,9 +43,6 @@ class Settings(BaseSettings):
     # Results per search when the caller does not say
     default_results: int = Field(default=24, gt=0)
     max_results: int = Field(default=60, gt=0)
-    # Reciprocal rank fusion constant and picture share (0.8 keeps function words in descriptions from outvoting images)
-    fusion_k: int = Field(default=60, gt=0)
-    picture_weight: float = Field(default=0.8, gt=0, le=1)
     # Minimum cosine similarity returned in picture mode (0 disables filtering)
     # Calibrated from eval negatives (max 0.3162) vs positives (min 0.3818) on gemini-embedding-2.
     min_picture_score: float = Field(default=0.35, ge=-1, le=1)

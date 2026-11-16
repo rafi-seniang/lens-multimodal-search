@@ -8,7 +8,6 @@ import pytest
 from PIL import Image
 
 from app.bootstrap import create_app
-from app.engines.keyword import KeywordIndex
 from app.features.search.collection import load_collection, write_index
 from app.features.search.schemas import Photograph
 from app.features.search.service import Lens
@@ -81,8 +80,6 @@ def lens(collection_dir: Path) -> Lens:
     return Lens(
         collection,
         FakeEmbedder(),
-        KeywordIndex(collection.photographs),
-        fusion_k=60,
         min_picture_score=0.0,
         collection_dir=collection_dir,
     )

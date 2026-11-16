@@ -112,20 +112,8 @@ def write_index(directory: Path, model: str, photographs: list[Photograph], vect
     (directory / INDEX_FILE).write_text(json.dumps(index), encoding="utf-8")
 
 
-def upload_title(custom_title: str | None, stem: str, index: int, batch_count: int) -> str:
-    if not custom_title:
-        return stem
-    if batch_count == 1:
-        return custom_title
-    return f"{custom_title} ({index + 1})"
-
-
-def write_uploaded_files(
-    directory: Path,
-    items: list[tuple[str, Image.Image]],
-    custom_title: str | None,
-    tags: list[str],
-) -> list[Photograph]:
+def write_uploaded_files(directory: Path, items: list[tuple[str, Image.Image]]) -> list[Photograph]:
+    """Saves uploads as WebP. The file name is kept only as a record: search never reads it."""
     uploads_dir = directory / "images" / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
     today = dt.datetime.now(tz=dt.UTC).strftime("%Y-%m-%d")
@@ -135,16 +123,14 @@ def write_uploaded_files(
         photo_id = f"up-{uuid.uuid4().hex[:10]}"
         relative_path = f"uploads/{photo_id}.webp"
         image.save(directory / "images" / relative_path, format="WEBP", quality=88)
-        stem = Path(filename).stem.strip() or photo_id
-        resolved_title = upload_title(custom_title, stem, index, len(items))
         added.append(
             Photograph(
                 id=photo_id,
-                title=resolved_title,
+                title=Path(filename).stem.strip() or photo_id,
                 artist="Local upload",
                 date=today,
                 medium="Uploaded picture",
-                tags=tags or ["Untagged"],
+                tags=[],
                 image=relative_path,
                 width=image.width,
                 height=image.height,

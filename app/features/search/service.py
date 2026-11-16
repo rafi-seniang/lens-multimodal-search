@@ -1,4 +1,8 @@
-"""Lens: semantic and hybrid photograph search backed by Typesense (or numpy in tests) plus image ingestion."""
+"""Lens: photograph search by meaning alone, backed by Typesense (or numpy in tests), plus image ingestion.
+
+A query, written or a picture, becomes a Gemini Embedding 2 vector and is compared with each picture's vector. No
+caption, title or tag takes part, so a hit is found from what the picture shows.
+"""
 
 import asyncio
 import time
@@ -8,9 +12,8 @@ import numpy as np
 from PIL import Image
 
 from app.engines.embedder import Embedder
-from app.engines.keyword import KeywordIndex
 from app.features.search.collection import Collection, remove_uploaded_file, save_uploads, write_uploaded_files
-from app.features.search.schemas import Hit, IngestResult, Mode, OriginFilter, SearchResult
+from app.features.search.schemas import Hit, IngestResult, OriginFilter, SearchResult
 from app.features.search.typesense_store import TypesensePhotographStore
 from app.platform.errors import InvalidAction, NotFound
 
@@ -24,12 +27,8 @@ def top_positions(scores: np.ndarray, limit: int) -> np.ndarray:
     return top[np.argsort(-scores[top])]
 
 
-def ranks(scores: np.ndarray) -> np.ndarray:
-    """Rank of every photograph by score, 1 for the best."""
-    order = np.argsort(-scores)  # fusion needs every rank across the active slice
-    positions = np.empty_like(order)
-    positions[order] = np.arange(1, len(scores) + 1)
-    return positions
+def elapsed_ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 1)
 
 
 class Lens:
@@ -37,18 +36,12 @@ class Lens:
         self,
         collection: Collection,
         embedder: Embedder,
-        keyword: KeywordIndex,
-        fusion_k: int,
-        picture_weight: float = 0.8,
         min_picture_score: float = 0.0,
         store: TypesensePhotographStore | None = None,
         collection_dir: Path | None = None,
     ) -> None:
         self.collection = collection
         self._embedder = embedder
-        self._keyword = keyword
-        self._fusion_k = fusion_k
-        self._picture_weight = picture_weight
         self._min_picture_score = min_picture_score
         self._store = store
         self._collection_dir = collection_dir
@@ -74,171 +67,79 @@ class Lens:
             dtype=np.intp,
         )
 
-    def _memory_result(
-        self,
-        query: str,
-        mode: str,
-        scores: np.ndarray,
-        caption_scores: np.ndarray,
-        picture_scores: np.ndarray | None,
-        limit: int,
-        origin: OriginFilter,
-        started: float,
-        apply_cutoff: bool = True,
-    ) -> SearchResult:
+    def _memory_hits(self, scores: np.ndarray, limit: int, origin: OriginFilter, cutoff: float) -> list[Hit]:
+        """The best photographs by cosine similarity, at or above the cutoff."""
         allowed = self._allowed_positions(origin)
         if len(allowed) == 0:
-            return SearchResult(
-                query=query, mode=mode, took_ms=round((time.perf_counter() - started) * 1000, 1), hits=[]
-            )
-        sliced_scores = scores[allowed]
-        cutoff = self._min_picture_score if apply_cutoff and self._min_picture_score > 0 else None
-        hits = [
-            Hit(
-                photograph=self.collection.photographs[int(allowed[local_pos])],
-                score=round(float(sliced_scores[local_pos]), 4),
-                in_caption=bool(caption_scores[int(allowed[local_pos])] > 0),
-            )
-            for local_pos in top_positions(sliced_scores, limit)
-            if (sliced_scores[local_pos] > 0 or mode != "caption")
-            and (
-                cutoff is None
-                or caption_scores[int(allowed[local_pos])] > 0
-                or (picture_scores is not None and picture_scores[int(allowed[local_pos])] >= cutoff)
-            )
+            return []
+        sliced = scores[allowed]
+        return [
+            Hit(photograph=self.collection.photographs[int(allowed[position])], score=round(float(sliced[position]), 4))
+            for position in top_positions(sliced, limit)
+            if sliced[position] >= cutoff
         ]
-        return SearchResult(query=query, mode=mode, took_ms=round((time.perf_counter() - started) * 1000, 1), hits=hits)
 
-    async def search_text(self, query: str, mode: Mode, limit: int, origin: OriginFilter = "all") -> SearchResult:
+    async def _search_vector(self, query: str, vector: np.ndarray, limit: int, origin: OriginFilter) -> SearchResult:
         started = time.perf_counter()
-        caption_scores = self._keyword.scores(query)
-        if self._store is not None:
-            caption_ids = {
-                self.collection.photographs[index].id for index, score in enumerate(caption_scores) if score > 0
-            }
-            vector = None if mode == "caption" else await self._embedder.text(query)
-            hits = await self._store.search_text(
-                query=query,
-                vector=vector,
-                mode=mode,
-                alpha=self._picture_weight,
-                limit=limit,
-                origin=origin,
-                caption_ids=caption_ids,
-                min_picture_score=self._min_picture_score,
-            )
-            return SearchResult(
-                query=query, mode=mode, took_ms=round((time.perf_counter() - started) * 1000, 1), hits=hits
-            )
-
-        if mode == "caption":
-            return self._memory_result(query, mode, caption_scores, caption_scores, None, limit, origin, started)
-        picture_scores = self.collection.vectors @ await self._embedder.text(query)
-        if mode == "picture":
-            return self._memory_result(
-                query, mode, picture_scores, caption_scores, picture_scores, limit, origin, started
-            )
-        # Weighted reciprocal rank fusion: a strong caption match lifts a top picture, weak function words do not
-        fused = self._picture_weight / (self._fusion_k + ranks(picture_scores))
-        fused += np.where(caption_scores > 0, (1 - self._picture_weight) / (self._fusion_k + ranks(caption_scores)), 0)
-        return self._memory_result(query, mode, fused, caption_scores, picture_scores, limit, origin, started)
-
-    async def search_image(self, image: Image.Image, limit: int, origin: OriginFilter = "all") -> SearchResult:
-        started = time.perf_counter()
-        vector = await self._embedder.image(image)
         if self._store is not None:
             hits = await self._store.search_vector(vector, limit, origin, min_picture_score=self._min_picture_score)
-            return SearchResult(
-                query="an uploaded picture",
-                mode="picture",
-                took_ms=round((time.perf_counter() - started) * 1000, 1),
-                hits=hits,
-            )
-        scores = self.collection.vectors @ vector
-        return self._memory_result(
-            "an uploaded picture", "picture", scores, np.zeros_like(scores), scores, limit, origin, started
-        )
+        else:
+            hits = self._memory_hits(self.collection.vectors @ vector, limit, origin, self._min_picture_score)
+        return SearchResult(query=query, mode="picture", took_ms=elapsed_ms(started), hits=hits)
+
+    async def search_text(self, query: str, limit: int, origin: OriginFilter = "all") -> SearchResult:
+        return await self._search_vector(query, await self._embedder.text(query), limit, origin)
+
+    async def search_image(self, image: Image.Image, limit: int, origin: OriginFilter = "all") -> SearchResult:
+        return await self._search_vector("an uploaded picture", await self._embedder.image(image), limit, origin)
 
     async def similar(self, photograph_id: str, limit: int) -> SearchResult:
         started = time.perf_counter()
         if self._store is not None:
             title, hits = await self._store.similar(photograph_id, limit)
-            return SearchResult(
-                query=f"like {title}",
-                mode="picture",
-                took_ms=round((time.perf_counter() - started) * 1000, 1),
-                hits=hits,
-            )
+            return SearchResult(query=f"like {title}", mode="picture", took_ms=elapsed_ms(started), hits=hits)
         position = self.collection.position_by_id.get(photograph_id)
         if position is None:
             raise NotFound(f"No photograph {photograph_id} in the collection.")
         scores = self.collection.vectors @ self.collection.vectors[position]
         scores[position] = -np.inf  # a photograph is always most like itself
         title = self.collection.photographs[position].title
-        return self._memory_result(
-            f"like {title}",
-            "picture",
-            scores,
-            np.zeros_like(scores),
-            scores,
-            limit,
-            "all",
-            started,
-            apply_cutoff=False,
-        )
+        hits = self._memory_hits(scores, limit, "all", cutoff=-np.inf)  # the nearest, however near
+        return SearchResult(query=f"like {title}", mode="picture", took_ms=elapsed_ms(started), hits=hits)
 
-    async def list_photographs(self, origin: OriginFilter, limit: int, tag: str | None = None) -> SearchResult:
+    async def list_photographs(self, origin: OriginFilter, limit: int) -> SearchResult:
         started = time.perf_counter()
-        cleaned_tag = tag.strip() if tag and tag.strip() else None
-        label = cleaned_tag or ("uploaded pictures" if origin == "upload" else "collection")
+        label = "uploaded pictures" if origin == "upload" else "collection"
         if self._store is not None:
-            hits = await self._store.list_recent(origin, limit, tag=cleaned_tag)
-            return SearchResult(
-                query=label, mode="browse", took_ms=round((time.perf_counter() - started) * 1000, 1), hits=hits
-            )
-        allowed = [
-            int(pos)
-            for pos in self._allowed_positions(origin)
-            if cleaned_tag is None or cleaned_tag in self.collection.photographs[int(pos)].tags
-        ]
-        # Browse shows newest uploads first when created_at is set, keeping archive order otherwise
-        ordered = sorted(
-            allowed,
-            key=lambda pos: (self.collection.photographs[pos].created_at, -pos),
-            reverse=True,
-        )[:limit]
-        hits = [Hit(photograph=self.collection.photographs[pos], score=1.0, in_caption=False) for pos in ordered]
-        return SearchResult(
-            query=label, mode="browse", took_ms=round((time.perf_counter() - started) * 1000, 1), hits=hits
-        )
+            hits = await self._store.list_recent(origin, limit)
+        else:
+            # Newest uploads first when created_at is set, archive order otherwise
+            ordered = sorted(
+                (int(position) for position in self._allowed_positions(origin)),
+                key=lambda position: (self.collection.photographs[position].created_at, -position),
+                reverse=True,
+            )[:limit]
+            hits = [Hit(photograph=self.collection.photographs[position], score=1.0) for position in ordered]
+        return SearchResult(query=label, mode="browse", took_ms=elapsed_ms(started), hits=hits)
 
-    async def add_photographs(
-        self,
-        uploads: list[tuple[str, Image.Image]],
-        title: str | None = None,
-        tags: list[str] | None = None,
-    ) -> IngestResult:
+    async def add_photographs(self, uploads: list[tuple[str, Image.Image]]) -> IngestResult:
+        """Embeds and stores pictures as they are: no title or tag is asked for, since search never reads one."""
         if self._collection_dir is None:
             raise InvalidAction("Collection directory is not configured for uploads.")
         started = time.perf_counter()
-        cleaned_title = title.strip() if title and title.strip() else None
-        cleaned_tags = [tag.strip() for tag in (tags or []) if tag.strip()]
         vectors = await self._embedder.images([image for _, image in uploads])
-        added = await asyncio.to_thread(
-            write_uploaded_files, self._collection_dir, uploads, cleaned_title, cleaned_tags
-        )
+        added = await asyncio.to_thread(write_uploaded_files, self._collection_dir, uploads)
         async with self._write_lock:
             if self._store is not None:
                 await self._store.upsert(added, vectors)
             self.collection.append(added, vectors)
-            self._keyword = KeywordIndex(self.collection.photographs)
             await asyncio.to_thread(
                 save_uploads, self._collection_dir, self.collection.photographs, self.collection.vectors
             )
         return IngestResult(
             added=added,
             total_photographs=len(self.collection.photographs),
-            took_ms=round((time.perf_counter() - started) * 1000, 1),
+            took_ms=elapsed_ms(started),
         )
 
     async def delete_photograph(self, photograph_id: str) -> int:
@@ -254,7 +155,6 @@ class Lens:
             if self._store is not None:
                 await self._store.delete(photograph_id)
             self.collection.remove(photograph_id)
-            self._keyword = KeywordIndex(self.collection.photographs)
             await asyncio.to_thread(
                 save_uploads, self._collection_dir, self.collection.photographs, self.collection.vectors
             )
