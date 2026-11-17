@@ -34,6 +34,11 @@ async def test_results_are_capped_at_the_maximum(client: httpx.AsyncClient) -> N
     assert len(body["hits"]) == 3
 
 
+async def test_a_listing_can_show_more_than_a_search(client: httpx.AsyncClient) -> None:
+    body = (await client.get("/v1/photographs", params={"origin": "all", "limit": 50})).json()
+    assert len(body["hits"]) == 4
+
+
 async def test_an_uploaded_picture_finds_photographs_that_look_like_it(client: httpx.AsyncClient) -> None:
     response = await client.post("/v1/search/image", files={"file": ("query.png", png((0, 0, 255)), "image/png")})
     assert response.status_code == 200

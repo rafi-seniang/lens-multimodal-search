@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     # Results per search when the caller does not say
     default_results: int = Field(default=24, gt=0)
     max_results: int = Field(default=60, gt=0)
+    # Photographs per listing, so the whole archive fits on one screen. Typesense returns at most 250 a page
+    max_listed: int = Field(default=250, gt=0, le=250)
     # Minimum cosine similarity returned in picture mode (0 disables filtering)
     # Calibrated from eval negatives (max 0.3162) vs positives (min 0.3818) on gemini-embedding-2.
     min_picture_score: float = Field(default=0.35, ge=-1, le=1)
