@@ -37,7 +37,7 @@ Typesense, the index or the key is missing.
 | `GET /v1/search?q=...&origin=all` | search by words, `origin` is `all`, `upload` or `met` |
 | `POST /v1/search/image` | rank photographs that look like an uploaded picture |
 | `POST /v1/photographs` | embed and index one or more uploaded pictures (files only) |
-| `GET /v1/photographs?origin=upload` | recent photographs, newest uploads first |
+| `GET /v1/photographs?origin=upload` | photographs, newest uploads first, up to `MAX_LISTED` (250) at once |
 | `DELETE /v1/photographs/{id}` | delete an uploaded picture |
 | `GET /v1/photographs/{id}/similar` | the nearest photographs to one in the collection |
 | `GET /v1/collection` | counts, vector store, model and dimensions |
@@ -68,7 +68,7 @@ docs/            adr/ (decisions), experiments/ (measurements)
 
 ## Checks
 
-`ruff check . && ruff format --check . && mypy && pytest -q` (21 tests, no network). `python scripts/eval_search.py`
+`ruff check . && ruff format --check . && mypy && pytest -q` (22 tests, no network). `python scripts/eval_search.py`
 (with `PYTHONPATH=.`, after `build_index.py`) runs the evaluation through the configured store.
 
 ## Measured

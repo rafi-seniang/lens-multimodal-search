@@ -45,7 +45,8 @@ class SearchController:
         return await self._lens.search_image(image, self._result_count(limit), origin=origin)
 
     async def list_photographs(self, origin: OriginFilter, limit: int | None) -> SearchResult:
-        return await self._lens.list_photographs(origin, self._result_count(limit))
+        count = min(limit or self._settings.default_results, self._settings.max_listed)
+        return await self._lens.list_photographs(origin, count)
 
     async def add_photographs(self, files: list[UploadFile]) -> IngestResult:
         if not files:
